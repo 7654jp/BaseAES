@@ -84,17 +84,11 @@ pub fn get_pixbuf_with_embedded_image(img_buf: &[u8]) -> gtk4::gdk_pixbuf::Pixbu
 }
 
 pub fn add_vault(
-    master: Vec<u8>,
+    master_data: String,
     vname: String,
     password: String,
     mwindow: &impl IsA<gtk4::Window>,
 ) -> Option<(String, String)> {
-    let sbase_data = String::from_utf8(master);
-    if sbase_data.is_err() {
-        show_alert(mwindow, "Error", "Could not parse vault data.");
-        return None;
-    }
-    // Add new vault
     let vault_data = format!("^{vname}\n[Index]\n[Data]\n");
     let onewvault = encrypt_aes_with_key(mwindow, &vault_data, &hashify_sha256(&password));
     if onewvault.is_none() {
@@ -102,15 +96,124 @@ pub fn add_vault(
     }
     let newvault = onewvault.unwrap();
     let added_vault = format!(
-        "{}:{}{}",
+        "{}:{}{}\n",
         vname,
         u8_to_hex(&newvault.0),
         u8_to_hex(&newvault.1)
     );
-    return Some((
-        format!("{}{}\n", sbase_data.unwrap(), added_vault),
-        vault_data,
-    ));
+    return Some((format!("{master_data}{added_vault}"), vault_data));
+}
+
+pub fn get_current_from_vault_path(
+    file_list: Rc<gtk4::ListBox>,
+    index: Rc<RefCell<HashMap<PathBuf, String>>>,
+    data: Rc<RefCell<HashMap<String, Vec<u8>>>>,
+    path: PathBuf,
+) -> Vec<gtk4::Button> {
+    let mut items: Vec<gtk4::Button> = Vec::new();
+    for (ipath, name) in &*index.borrow() {
+        let name = name.clone();
+        let ipath = Rc::new(ipath.clone());
+        if !ipath.starts_with(&path) {
+            continue;
+        }
+        // Exclude subdirectory here
+        if ipath.parent().unwrap() != path {
+            continue;
+        }
+
+        let fname = name + if ipath.ends_with("/") { "/" } else { "" };
+        let lbutton = gtk4::Button::new();
+        lbutton.set_css_classes(&[&fname]);
+        let ltext = gtk4::Label::new(Some(&fname));
+        lbutton.set_child(Some(&ltext));
+
+        if ipath.ends_with("/") {
+            // Go down
+            let rpath = path.clone();
+            lbutton.connect_clicked(move |_| {
+                let mut newpath = rpath.clone();
+                newpath.push(Rc::clone(&ipath).as_ref());
+            });
+        } else {
+            // Show file
+            lbutton.connect_clicked(|_| {});
+        }
+
+        items.push(lbutton);
+    }
+    if path.to_str().unwrap() != "/" {
+        let abutton = gtk4::Button::new();
+        abutton.set_css_classes(&["../"]);
+        let atext = gtk4::Label::new(Some("../"));
+        abutton.set_child(Some(&atext));
+
+        abutton.connect_clicked(move |_| {
+            // Go up
+            let newpath = path.parent().unwrap().to_path_buf();
+            loop {
+                let dwidget = match file_list.last_child() {
+                    Some(w) => w,
+                    None => break,
+                };
+                file_list.remove(&dwidget);
+            }
+            for button in get_current_from_vault_path(
+                Rc::clone(&file_list),
+                Rc::clone(&index),
+                Rc::clone(&data),
+                newpath,
+            ) {
+                file_list.append(&button);
+            }
+        });
+
+        items.push(abutton);
+    }
+    items
+}
+
+pub fn vault_data_append(
+    filepath: Rc<String>,
+    filename: String,
+    file_data: Option<Vec<u8>>,
+    vindex: Rc<RefCell<HashMap<PathBuf, String>>>,
+    vdata: Rc<RefCell<HashMap<String, Vec<u8>>>>,
+) {
+    // Get file id here
+    // Maybe I can just save next index
+    let mut fileid: u16 = 0;
+    loop {
+        let filepath = format!("{}{}", Rc::clone(&filepath), fileid.to_string());
+        if vindex.borrow().contains_key(&PathBuf::from(filepath)) {
+            fileid += 1;
+        } else {
+            break;
+        }
+    }
+    for itempath in vindex.borrow().values() {
+        let lfilepath = Rc::clone(&filepath);
+        if !itempath.starts_with(lfilepath.as_ref()) {
+            continue;
+        }
+        if itempath == &PathBuf::from(format!("{lfilepath}{}", fileid.to_string())) {
+            fileid += 1;
+        } else {
+            break;
+        }
+    }
+    // Add file to index
+    let file_pathcode = format!("{filepath}{fileid}");
+    eprintln!("Filename:{filename}\nFileID:{fileid}\nFile pathcode: {file_pathcode}\n");
+    vindex
+        .borrow_mut()
+        .insert(PathBuf::from(&file_pathcode), filename.to_string());
+    // Also to data
+    if file_data.is_none() {
+        vdata.borrow_mut().insert(file_pathcode, Vec::new());
+    } else {
+        vdata.borrow_mut().insert(file_pathcode, file_data.unwrap());
+    }
 }
 
 pub fn read_master(parent: &impl IsA<gtk4::Window>) -> Option<([u8; 1], [u8; 12], Vec<u8>)> {
@@ -380,7 +483,7 @@ pub fn decrypt_aes_with_key(
     let nonce = Nonce::from_slice(&nonce_buf);
     let rbase_data = cipher.decrypt(nonce, ciphertext.as_ref());
     if rbase_data.is_err() {
-        if show_error {
+        if show_error == true {
             show_alert(parent, "Error", "Error: Failed to decrypt provided data.");
         }
         return None;
@@ -454,9 +557,10 @@ pub fn delete_button_vault_list(
                                     .try_into()
                                     .unwrap(),
                                 &hashify_sha256(&pw_pass_box.text().to_string()),
-                                true,
+                                false,
                             );
                             if ovault_raw.is_none() {
+                                show_alert(&pw_window, "Alert", "Vault decryption failed.\nThe password is incorrect, or the vault is broken.");
                                 return;
                             }
                             // Remove selected one
