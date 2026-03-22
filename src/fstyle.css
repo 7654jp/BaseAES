@@ -1,0 +1,11 @@
+label {
+    font-size: 14pt;
+}
+
+label.big {
+    font-size: 18pt;
+}
+
+scrolledwindow.notice {
+    background-color: #ffeeee;
+}
