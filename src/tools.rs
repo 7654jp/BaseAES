@@ -5,7 +5,9 @@ use glib::{Bytes, clone};
 use gtk4::prelude::*;
 use image::EncodableLayout;
 use sha2::{Digest, Sha256};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -483,10 +485,145 @@ pub fn delete_button_vault_list(
     buttons
 }
 
+pub fn filebase_setup(
+    application: &gtk4::Application,
+    window: Rc<gtk4::ApplicationWindow>,
+    base_file: fs::File,
+    vault_path: String,
+) {
+    // Setup window
+    let setup_window = gtk4::Window::builder()
+        .application(application)
+        .title("FileBase setup")
+        .resizable(false)
+        .modal(true)
+        .build();
+    setup_window.set_size_request(400, 480);
+
+    let setup_grid = gtk4::Grid::builder()
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(12)
+        .margin_end(12)
+        .row_spacing(8)
+        .column_spacing(8)
+        .build();
+
+    let setup_title = gtk4::Label::new(Some("Welcome to FileBase!"));
+    setup_title.add_css_class("big");
+    setup_grid.attach(&setup_title, 1, 1, 2, 1);
+
+    let setup_desc = gtk4::Label::new(Some(
+        "FileBase will help keep your files safe.\nRead PRECAUTIONS before start!",
+    ));
+    setup_grid.attach(&setup_desc, 1, 2, 2, 1);
+
+    // Read before continue
+    let setup_precautions = gtk4::ScrolledWindow::new();
+    setup_precautions.add_css_class("notice");
+    setup_precautions.set_size_request(320, 280);
+    let setup_precautions_text = gtk4::Label::new(Some(PRECAUTIONS_TXT));
+    setup_precautions.set_child(Some(&setup_precautions_text));
+    setup_grid.attach(&setup_precautions, 1, 3, 2, 1);
+
+    // Master file encryption selectors etc.
+    let setup_aes_desc = gtk4::Label::new(Some("Select master file encryption:"));
+    setup_grid.attach(&setup_aes_desc, 1, 4, 2, 1);
+
+    let setup_aes_selector1 = gtk4::CheckButton::new();
+    let setup_aes_label1 = gtk4::Label::new(Some("Use default"));
+    setup_aes_selector1.set_child(Some(&setup_aes_label1));
+
+    let setup_aes_selector2 = gtk4::CheckButton::new();
+    let setup_aes_label2 = gtk4::Label::new(Some("Use password (extra safety)"));
+    setup_aes_selector2.set_child(Some(&setup_aes_label2));
+    setup_aes_selector1.set_group(Some(&setup_aes_selector2));
+
+    setup_grid.attach(&setup_aes_selector1, 1, 5, 1, 1);
+    setup_grid.attach(&setup_aes_selector2, 2, 5, 1, 1);
+
+    let setup_aes_pwbox = gtk4::PasswordEntry::new();
+    setup_grid.attach(&setup_aes_pwbox, 2, 6, 1, 1);
+
+    let setup_aes_button = gtk4::Button::new();
+    let setup_aes_button_label = gtk4::Label::new(Some("OK"));
+    setup_aes_button.set_child(Some(&setup_aes_button_label));
+    let masterfile = RefCell::new(base_file);
+    let selectors = (setup_aes_selector1.clone(), setup_aes_selector2.clone());
+    setup_aes_button.connect_clicked(clone!(
+        #[weak]
+        setup_window,
+        move |_| {
+            let default_encrypt = selectors.0.is_active();
+            if default_encrypt || selectors.1.is_active() {
+                // Use default encryption
+                let oencrypted = if default_encrypt {
+                    encrypt_aes(&setup_window, "^FileBase All-in-One vault Ver.1^\n")
+                } else {
+                    encrypt_aes_with_key(
+                        &setup_window,
+                        "^FileBase All-in-One vault Ver.1^\n",
+                        &hashify_sha256(&setup_aes_pwbox.text().to_string()),
+                    )
+                };
+                if oencrypted.is_none() {
+                    return;
+                }
+                let (nonced, valued) = oencrypted.unwrap();
+                let mut mfile = masterfile.borrow_mut();
+
+                let rtwrite = mfile.write(if default_encrypt { b"d" } else { b"u" });
+                if rtwrite.is_err() {
+                    show_alert(
+                        &setup_window,
+                        "Error",
+                        "Could not write encrypt type to master vault.",
+                    );
+                    return;
+                }
+                let rnwrite = mfile.write_all(&nonced);
+                if rnwrite.is_err() {
+                    show_alert(
+                        &setup_window,
+                        "Error",
+                        "Could not write nonce to master vault.",
+                    );
+                    return;
+                }
+                let rdwrite = mfile.write_all(&valued);
+                if rdwrite.is_err() {
+                    show_alert(
+                        &setup_window,
+                        "Error",
+                        "Could not write default value to master vault.",
+                    );
+                    return;
+                }
+                setup_window.close();
+            }
+        }
+    ));
+    setup_grid.attach(&setup_aes_button, 2, 7, 1, 1);
+
+    setup_window.set_child(Some(&setup_grid));
+    setup_window.connect_close_request(clone!(
+        #[strong]
+        vault_path,
+        move |_| {
+            if !(setup_aes_selector1.is_active() || setup_aes_selector2.is_active()) {
+                let _ = fs::remove_file(vault_path.clone());
+                window.close();
+            }
+            glib::Propagation::Proceed
+        }
+    ));
+    setup_window.present();
+}
+
 // CBK: Common Base Key
 const BASE_KEY: &[u8; 32] = b"CBK@TmV2ZXJHb25uYUdpdmVZb3VVcA==";
 
-pub const PRECAUTIONS_TXT: &str = concat!(
+const PRECAUTIONS_TXT: &str = concat!(
     "1. DATA INTEGRITY\n",
     "THIS DOES NOT GUARANTEE THAT ENCRYPTED DATA HAS NOT BEEN ALTERED. DATA TAMPERING OR CORRUPTION MAY OCCUR.\n\n",
     "2. DATA LEGALITY\n",
