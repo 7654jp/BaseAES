@@ -2,8 +2,16 @@ label {
     font-size: 14pt;
 }
 
+.normal {
+    font-size: 14pt;
+}
+
 label.big {
     font-size: 18pt;
+}
+
+label.notice {
+    color: black;
 }
 
 scrolledwindow.notice {
