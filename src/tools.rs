@@ -31,7 +31,6 @@ pub fn hex_to_u8(data: &String) -> Result<Vec<u8>, std::num::ParseIntError> {
     let mut resvec: Vec<u8> = Vec::new();
     for i in (0..data.len()).step_by(2) {
         if i == data.len() - 1 {
-            eprintln!("hex2u8 conversion break occurred");
             break;
         }
         resvec.push(u8::from_str_radix(&data[i..i + 2], 16)?);
@@ -88,6 +87,24 @@ pub fn get_pixbuf_with_embedded_image(img_buf: &[u8]) -> gtk4::gdk_pixbuf::Pixbu
     )
 }
 
+pub fn itemname_check(name: &String, ftype: &str) -> Result<(), String> {
+    if name.contains("^") || name.contains(":") || name.contains("/") || name.contains("'") {
+        return Err(format!(
+            "{ftype} name cannot contain \"^\" or \":\" or \"/\" or \"'\" .",
+        ));
+    }
+    if name.starts_with(" ") {
+        return Err(format!("{ftype} name cannot start with ' '."));
+    }
+    if name.ends_with(" ") || name.ends_with(".") {
+        return Err(format!("{ftype} name cannot end with ' ' or '.'."));
+    }
+    if name.chars().count() == 0 {
+        return Err(format!("{ftype} name cannot be empty."));
+    }
+    return Ok(());
+}
+
 pub fn add_vault(
     master_data: String,
     vname: &String,
@@ -107,176 +124,6 @@ pub fn add_vault(
         u8_to_hex(&newvault.1)
     );
     return Some((format!("{master_data}{added_vault}"), added_vault));
-}
-
-pub fn get_current_from_vault_path(
-    file_list: Rc<gtk4::ListBox>,
-    index: Rc<RefCell<BTreeMap<PathBuf, String>>>,
-    data: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
-    path: PathBuf,
-    name_viewer: Rc<gtk4::Label>,
-    content_viewer: Rc<gtk4::TextView>,
-) -> Vec<gtk4::Button> {
-    let mut items: Vec<gtk4::Button> = Vec::new();
-    for (ipath, name) in &*index.borrow() {
-        let name = name.clone();
-        let ipath = Rc::new(ipath.clone());
-        if !ipath.starts_with(&path) {
-            continue;
-        }
-        // Exclude subdirectory here
-        if ipath.parent().unwrap() != path {
-            continue;
-        }
-
-        let fname = name + if ipath.ends_with("/") { "/" } else { "" };
-        let lbutton = gtk4::Button::new();
-        lbutton.add_css_class(&fname);
-        let ltext = gtk4::Label::new(Some(&fname));
-        ltext.set_width_chars(24);
-        lbutton.set_child(Some(&ltext));
-
-        let name_viewer_rc = Rc::clone(&name_viewer);
-        let content_viewer_rc = Rc::clone(&content_viewer);
-        if ipath.ends_with("/") {
-            // Go down
-            let rpath = path.clone();
-            let flist_rc = Rc::clone(&file_list);
-            let index_rc = Rc::clone(&index);
-            let data_rc = Rc::clone(&data);
-            lbutton.connect_clicked(move |_| {
-                let mut newpath = rpath.clone();
-                newpath.push(Rc::clone(&ipath).as_ref());
-                loop {
-                    let dwidget = match flist_rc.last_child() {
-                        Some(w) => w,
-                        None => break,
-                    };
-                    flist_rc.remove(&dwidget);
-                }
-
-                for button in get_current_from_vault_path(
-                    Rc::clone(&flist_rc),
-                    Rc::clone(&index_rc),
-                    Rc::clone(&data_rc),
-                    newpath,
-                    Rc::clone(&name_viewer_rc),
-                    Rc::clone(&content_viewer_rc),
-                ) {
-                    flist_rc.append(&button);
-                }
-            });
-        } else {
-            // Show file
-            let vindex = Rc::clone(&index);
-            let vdata = Rc::clone(&data);
-            lbutton.connect_clicked(move |_| {
-                for class in name_viewer_rc.css_classes() {
-                    name_viewer_rc.remove_css_class(class.as_str());
-                }
-                let fileid_str = ipath.as_os_str().to_str().unwrap();
-                let fileid = PathBuf::from(&fileid_str);
-                let vf_index = vindex.borrow();
-                let vf_data = vdata.borrow();
-                let data = match vf_data.get(&fileid) {
-                    Some(d) => d,
-                    None => return,
-                };
-                let title = match vf_index.get(&fileid) {
-                    Some(s) => s,
-                    None => return,
-                };
-                let data_utf8 = str::from_utf8(data);
-                if data_utf8.is_ok() {
-                    name_viewer_rc.set_text(title);
-                    content_viewer_rc.buffer().set_text(data_utf8.unwrap());
-                } else {
-                    name_viewer_rc.set_text(&(title.to_owned() + " : Binary"));
-                    content_viewer_rc.buffer().set_text(&u8_to_hex(data));
-                }
-                name_viewer_rc.add_css_class(fileid_str);
-                content_viewer_rc.set_editable(true);
-            });
-        }
-
-        items.push(lbutton);
-    }
-    if path.to_str().unwrap() != "/" {
-        let abutton = gtk4::Button::with_label("../");
-        abutton.add_css_class("../");
-
-        abutton.connect_clicked(move |_| {
-            // Go up
-            let newpath = path.parent().unwrap().to_path_buf();
-            loop {
-                let dwidget = match file_list.last_child() {
-                    Some(w) => w,
-                    None => break,
-                };
-                file_list.remove(&dwidget);
-            }
-            for button in get_current_from_vault_path(
-                Rc::clone(&file_list),
-                Rc::clone(&index),
-                Rc::clone(&data),
-                newpath,
-                Rc::clone(&name_viewer),
-                Rc::clone(&content_viewer),
-            ) {
-                file_list.append(&button);
-            }
-        });
-
-        items.push(abutton);
-    }
-    items
-}
-
-pub fn vault_data_append(
-    filepath: Rc<String>,
-    filename: String,
-    file_data: Option<Vec<u8>>,
-    vindex: Rc<RefCell<BTreeMap<PathBuf, String>>>,
-    vdata: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
-) {
-    // Get file id here
-    // Maybe I can just save next index
-    let mut fileid: u16 = 0;
-    loop {
-        let filepath = format!("{}{}", Rc::clone(&filepath), fileid.to_string());
-        if vindex.borrow().contains_key(&PathBuf::from(filepath)) {
-            fileid += 1;
-        } else {
-            break;
-        }
-    }
-    for itempath in vindex.borrow().values() {
-        let lfilepath = Rc::clone(&filepath);
-        if !itempath.starts_with(lfilepath.as_ref()) {
-            continue;
-        }
-        if itempath == &PathBuf::from(format!("{lfilepath}{}", fileid.to_string())) {
-            fileid += 1;
-        } else {
-            break;
-        }
-    }
-    // Add file to index
-    let file_pathcode = format!("{filepath}{fileid}");
-    eprintln!("Filename:{filename}\nFileID:{fileid}\nFile pathcode: {file_pathcode}\n");
-    vindex
-        .borrow_mut()
-        .insert(PathBuf::from(&file_pathcode), filename.to_string());
-    // Also to data
-    if file_data.is_none() {
-        vdata
-            .borrow_mut()
-            .insert(PathBuf::from(file_pathcode), Vec::new());
-    } else {
-        vdata
-            .borrow_mut()
-            .insert(PathBuf::from(file_pathcode), file_data.unwrap());
-    }
 }
 
 pub fn read_master(parent: &impl IsA<gtk4::Window>) -> Option<([u8; 1], [u8; 12], Vec<u8>)> {
@@ -439,12 +286,7 @@ pub fn vault_decode(
                 continue;
             }
             let (dir, name) = line.split_once(":").unwrap();
-            if dir.ends_with("/") {
-                // It's a directory!
-                vindex.insert(PathBuf::from(dir), format!("{name}/"));
-            } else {
-                vindex.insert(PathBuf::from(dir), name.to_string());
-            }
+            vindex.insert(PathBuf::from(dir), name.to_string());
         } else if read_state == VaultReadState::Data {
             if !line.contains(":") {
                 continue;
@@ -550,6 +392,7 @@ pub fn delete_button_vault_list(
                         .title("Unlock vault")
                         .modal(true)
                         .build();
+                    pw_window.set_size_request(128, 80);
                     pw_window.set_application(Some(&capp));
 
                     let pw_grid = gtk4::Grid::builder()
@@ -563,10 +406,10 @@ pub fn delete_button_vault_list(
 
                     // Password label
                     let pw_pass_label = gtk4::Label::new(Some("Enter Vault password to confirm:"));
-                    pw_grid.attach(&pw_pass_label, 1, 1, 1, 1);
+                    pw_grid.attach(&pw_pass_label, 1, 1, 2, 1);
                     // Password input box
                     let pw_pass_box = gtk4::PasswordEntry::new();
-                    pw_pass_box.set_size_request(100, 24);
+                    pw_pass_box.set_size_request(128, 32);
                     pw_grid.attach(&pw_pass_box, 1, 2, 1, 1);
                     // Confirm button
                     let pw_ok_button = gtk4::Button::with_label("OK");
@@ -658,10 +501,10 @@ pub fn filebase_setup(
     setup_precautions.add_css_class("notice");
     setup_precautions.set_size_request(320, 280);
     let setup_precautions_text = gtk4::Label::builder()
-        .margin_top(8)
+        .margin_top(12)
         .margin_bottom(8)
-        .margin_start(8)
-        .margin_end(8)
+        .margin_start(12)
+        .margin_end(12)
         .wrap(true)
         .wrap_mode(gtk4::pango::WrapMode::Word)
         .build();
