@@ -17,3 +17,7 @@ label.notice {
 scrolledwindow.notice {
     background-color: #ffeeee;
 }
+
+label.warning {
+    color: #ffcc00;
+}

@@ -1,5 +1,48 @@
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::rc::Rc;
+
+use gtk4::prelude::WidgetExt;
+
+pub const VDATA_INDEX_APPEND: i16 = -32000;
+pub type Cipher = ([u8; 12], Vec<u8>);
+
+pub struct I16Container {
+    value: i16,
+}
+
+impl I16Container {
+    pub fn new(value: i16) -> Self {
+        I16Container { value }
+    }
+
+    pub fn get(&self) -> &i16 {
+        &self.value
+    }
+
+    pub fn set(&mut self, value: i16) {
+        self.value = value;
+    }
+}
+
+pub struct RawPixbuf {
+    pub data: Vec<u8>,
+    pub has_alpha: bool,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl RawPixbuf {
+    pub fn new(data: Vec<u8>, has_alpha: bool, width: i32, height: i32) -> Self {
+        Self {
+            data,
+            has_alpha,
+            width,
+            height,
+        }
+    }
+}
 
 pub struct LabelWithInternalText {
     pub label: gtk4::Label,
@@ -75,6 +118,13 @@ impl ButtonWithInternalText {
         Self { button, text }
     }
 
+    pub fn with_label(label: &str, text: String) -> Self {
+        Self {
+            button: gtk4::Button::with_label(label),
+            text,
+        }
+    }
+
     pub fn get_itext(&self) -> &String {
         &self.text
     }
@@ -85,5 +135,71 @@ impl Deref for ButtonWithInternalText {
 
     fn deref(&self) -> &Self::Target {
         &self.button
+    }
+}
+
+#[derive(Clone)]
+pub enum IDCSImageType {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+impl IDCSImageType {
+    pub fn from_str_name(name: &str) -> Option<Self> {
+        match name {
+            "image/png" => Some(IDCSImageType::Png),
+            "image/jpeg" => Some(IDCSImageType::Jpeg),
+            "image/webp" => Some(IDCSImageType::Webp),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ImgDecodeItem {
+    pub imgtype: IDCSImageType,
+    pub data: Vec<u8>,
+}
+
+impl ImgDecodeItem {
+    pub fn new(imgtype: IDCSImageType, data: Vec<u8>) -> Self {
+        Self { imgtype, data }
+    }
+}
+
+pub struct ImgDecodingController {
+    pub queue: BTreeMap<u32, ImgDecodeItem>,
+    pub image_provider: BTreeMap<u32, Rc<gtk4::Image>>,
+    pub is_processing: bool,
+    cindex: u32,
+}
+
+impl ImgDecodingController {
+    pub fn new() -> Self {
+        Self {
+            queue: BTreeMap::new(),
+            image_provider: BTreeMap::new(),
+            is_processing: false,
+            cindex: 0,
+        }
+    }
+
+    pub fn request_decode(
+        &mut self,
+        img_type: IDCSImageType,
+        img_data: Vec<u8>,
+        iviewer: Rc<gtk4::Image>,
+    ) {
+        let curr_index = self.cindex;
+        iviewer.add_css_class(&curr_index.to_string());
+        self.queue
+            .insert(curr_index, ImgDecodeItem::new(img_type, img_data));
+        self.image_provider.insert(curr_index, iviewer);
+        if self.cindex == u32::MAX {
+            self.cindex = 0;
+        } else {
+            self.cindex += 1;
+        }
     }
 }

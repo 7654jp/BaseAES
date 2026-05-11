@@ -1,32 +1,37 @@
-<h2 align="center">FileBase</h2>
-<h3 align="center">A simple filesystem-like vault system with strong encryption.</h3>
+<h2 style="text-align: center;">BaseAES</h2>
+<h3 style="text-align: center;">A simple filesystem-like vault system with strong encryption.</h3>
 
 *****
 
 > [!CAUTION]
 > **PLEASE READ PRECAUTIONS BEFORE USING THIS PROGRAM.**
 
-FileBase is made of two modules:
-
-- FileBase Vault Manager
-- FileBase Explorer
-
-Everything is contained in one executable.
-
 > [!IMPORTANT]
 > This program is a preview version.
-> In release version, you'll be able to place 'master.vbase' anywhere you want to.
+> In release version, you can select where to save the master vault.
 
 *****
 
 ### Description  
 
 This is an encrypted filesystem manager, made by @7654jp.  
-This program was written in Rust, and uses aes-256-gcm for encryption.  
+This program was written in Rust, and uses AES-256-GCM for encryption.  
 **This was made for my personal use. Do not use this for important purposes.**  
 All data is stored in 'master.vbase' at same directory as this executable.  
 If you want to split vaults, copy this application to a different directory.  
-You can set each vault its password, and the vault will be protected with its hash as a key for AES.
+You can set each vault its password, and the vault will be protected with its hash as a key for AES.  
+This vault system **IS vulnable** to process memory dump.
+
+### Features
+
+- Text editing
+- Load image in separate thread
+- Support original text/image display format
+
+*****
+
+Contributions are welcome.  
+Please send a PR or open an issue if you want to improve something.
 
 *****
 
