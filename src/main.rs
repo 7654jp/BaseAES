@@ -128,65 +128,54 @@ fn open_main(application: &gtk4::Application) {
                         );
                         return;
                     }
+                    nv_window.close();
                     // Get master data
                     let mvname = match master_read_vname(&nv_window) {
-                        Some(d) => {
-                            nv_window.close();
-                            d
-                        }
-                        None => {
-                            nv_window.close();
-                            return;
-                        }
+                        Some(d) => d,
+                        None => return,
                     };
                     let mvname_info = Rc::new(mvname.0);
                     let mvname_cipher = Rc::new(mvname.1);
                     let vcomm_label = Rc::new(RefCell::new(gtk4::Label::new(None)));
-                    let vcomm_index = Rc::new(RefCell::new(I16Container::new(-1)));
+                    let vcomm_index: Rc<RefCell<ItemContainer<i16>>> =
+                        Rc::new(RefCell::new(ItemContainer::new(-1)));
 
                     // Decrypt master
                     if &[mvname_info[0]] == b"d" {
                         // Default encryption
                         let mvname_nonce = mvname_info[1..13].try_into().unwrap();
-                        let vname_plain_opt =
-                            decrypt_aes(aawindow.as_ref(), &mvname_cipher, mvname_nonce, true);
+                        let vname_plain_opt = decrypt_aes(
+                            Some(aawindow.as_ref()),
+                            &mvname_cipher,
+                            mvname_nonce,
+                            true,
+                        );
                         if vname_plain_opt.is_none() {
                             return;
                         }
-                        let vname_plain_str = match String::from_utf8(vname_plain_opt.unwrap()) {
-                            Ok(s) => s,
-                            Err(_) => {
-                                show_alert(
-                                    aawindow.as_ref(),
-                                    "Error",
-                                    "Could not parse 'vname' as string.",
-                                );
-                                return;
-                            }
+                        let vname_plain_str_opt = String::from_utf8(vname_plain_opt.unwrap());
+                        if vname_plain_str_opt.is_err() {
+                            show_alert(
+                                aawindow.as_ref(),
+                                "Error",
+                                "Could not parse 'vname' as string.",
+                            );
+                            return;
                         };
+                        let vname_plain_str = vname_plain_str_opt.unwrap();
 
                         let mut vault_count: i16 = 0;
                         // Vault name validation check
                         if vname_plain_str.contains(",") {
-                            for name in vname_plain_str.split(",") {
-                                if vault_count == 0 && name != "^BaseAES Vault Format Ver.2^" {
-                                    show_alert(
-                                        aawindow.as_ref(),
-                                        "Error",
-                                        "The vault index is corrupted.",
-                                    );
-                                    return;
-                                } else if name == vname.as_ref() {
-                                    show_alert(
-                                        aawindow.as_ref(),
-                                        "Alert",
-                                        "The vault name cannot be the same.",
-                                    );
-                                    return;
-                                }
-                                vault_count += 1;
+                            if let Some(vc) = check_vault_name(
+                                Rc::clone(&aawindow),
+                                &vname_plain_str,
+                                Rc::clone(&vname),
+                            ) {
+                                vault_count = vc;
+                            } else {
+                                return;
                             }
-                            vault_count -= 1;
                         }
                         vcomm_index.borrow_mut().set(vault_count);
 
@@ -244,25 +233,22 @@ fn open_main(application: &gtk4::Application) {
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
-                                let edited_vdata = match encrypt_aes(
+                                if let Some(edited_vdata) = encrypt_aes(
                                     aaawindow.as_ref(),
                                     &hex_to_u8(&label.text().to_string()).unwrap(),
                                 ) {
-                                    Some(s) => s,
-                                    None => {
-                                        show_alert(
-                                            aaawindow.as_ref(),
-                                            "Error",
-                                            "Failed to encrypt master vault.",
-                                        );
-                                        return;
-                                    }
-                                };
-                                master_update_data(
-                                    aaawindow.as_ref(),
-                                    None,
-                                    Some((vault_count, Some(&edited_vdata))),
-                                );
+                                    master_update_data(
+                                        aaawindow.as_ref(),
+                                        None,
+                                        Some((vault_count, Some(&edited_vdata))),
+                                    );
+                                } else {
+                                    show_alert(
+                                        aaawindow.as_ref(),
+                                        "Error",
+                                        "Failed to encrypt master vault.",
+                                    );
+                                }
                             });
                         vault::ask_vault_password_and_open(
                             Rc::new(application),
@@ -308,7 +294,7 @@ fn open_main(application: &gtk4::Application) {
                             move |_| {
                                 let user_key = Rc::new(hashify_sha256(pw_box.text().to_string()));
                                 let vname_plain_opt = decrypt_aes_with_key(
-                                    &pw_window,
+                                    Some(&pw_window),
                                     mvname_cipher.as_ref(),
                                     mvname_info[1..13].try_into().unwrap(),
                                     user_key.as_ref(),
@@ -337,25 +323,14 @@ fn open_main(application: &gtk4::Application) {
                                 let mut vault_count: i16 = 0;
                                 // Vault name validation check
                                 if base_data.contains(",") {
-                                    for name in base_data.split(",") {
-                                        if vault_count == 0
-                                            && name != "^BaseAES Vault Format Ver.2^"
-                                        {
-                                            show_alert(
-                                                aaawindow.as_ref(),
-                                                "Error",
-                                                "The vault index is corrupted.",
-                                            );
-                                            return;
-                                        } else if name == vname.as_ref() {
-                                            show_alert(
-                                                aaawindow.as_ref(),
-                                                "Alert",
-                                                "The vault name cannot be the same.",
-                                            );
-                                            return;
-                                        }
-                                        vault_count += 1;
+                                    if let Some(vc) = check_vault_name(
+                                        Rc::clone(&aaawindow),
+                                        &base_data,
+                                        Rc::clone(&vname),
+                                    ) {
+                                        vault_count = vc;
+                                    } else {
+                                        return;
                                     }
                                 }
                                 vcommindex.borrow_mut().set(vault_count);
@@ -418,26 +393,23 @@ fn open_main(application: &gtk4::Application) {
                                 vcommlabel
                                     .borrow_mut()
                                     .connect_css_classes_notify(move |label| {
-                                        let encrypted_master = match encrypt_aes_with_key(
+                                        if let Some(encrypted_master) = encrypt_aes_with_key(
                                             aaaawindow.as_ref(),
                                             &hex_to_u8(&label.text().to_string()).unwrap(),
                                             userkey_rc.as_ref(),
                                         ) {
-                                            Some(s) => s,
-                                            None => {
-                                                show_alert(
-                                                    aaaawindow.as_ref(),
-                                                    "Error",
-                                                    "Failed to encrypt master vault.",
-                                                );
-                                                return;
-                                            }
-                                        };
-                                        master_update_data(
-                                            aaaawindow.as_ref(),
-                                            None,
-                                            Some((vault_count, Some(&encrypted_master))),
-                                        );
+                                            master_update_data(
+                                                aaaawindow.as_ref(),
+                                                None,
+                                                Some((vault_count, Some(&encrypted_master))),
+                                            );
+                                        } else {
+                                            show_alert(
+                                                aaaawindow.as_ref(),
+                                                "Error",
+                                                "Failed to encrypt master vault.",
+                                            );
+                                        }
                                     });
                                 vault::ask_vault_password_and_open(
                                     Rc::clone(&aapprc),
@@ -512,20 +484,20 @@ fn open_main(application: &gtk4::Application) {
 
             selwindow.set_child(Some(&selvbox));
 
-            let ovname_data = master_read_vname(selwindow.as_ref());
-            if ovname_data.is_none() {
-                return;
-            }
-            let (vname_info, vname_cipher) = ovname_data.unwrap();
+            let (vname_info, vname_cipher) = match master_read_vname(selwindow.as_ref()) {
+                Some(vndata) => vndata,
+                None => return,
+            };
             let vcomm_label = Rc::new(RefCell::new(gtk4::Label::new(None)));
-            let vcomm_index = Rc::new(RefCell::new(I16Container::new(-1)));
+            let vcomm_index: Rc<RefCell<ItemContainer<i16>>> =
+                Rc::new(RefCell::new(ItemContainer::new(-1)));
 
             let oapprc = Rc::new(application);
             // Decrypt master
             if &[vname_info[0]] == b"d" {
                 // Default encryption
                 let vname_opt = decrypt_aes(
-                    selwindow.as_ref(),
+                    Some(selwindow.as_ref()),
                     &vname_cipher,
                     vname_info[1..13].try_into().unwrap(),
                     false,
@@ -541,30 +513,26 @@ fn open_main(application: &gtk4::Application) {
                 let vname_str = Rc::new(vname_str_res.unwrap());
                 // Save after user edited data inside vault
                 let oowindow = Rc::clone(&owindow);
-                let vcommindex = Rc::clone(&vcomm_index);
+                let vcindex_drc = Rc::clone(&vcomm_index);
                 vcomm_label
                     .borrow_mut()
                     .connect_css_classes_notify(move |label| {
-                        let label_ivalue = *vcommindex.borrow().get();
-                        let encrypted_master = match encrypt_aes(
+                        if let Some(encrypted_master) = encrypt_aes(
                             oowindow.as_ref(),
                             &hex_to_u8(&label.text().to_string()).unwrap(),
                         ) {
-                            Some(s) => s,
-                            None => {
-                                show_alert(
-                                    oowindow.as_ref(),
-                                    "Error",
-                                    "Failed to encrypt master vault.",
-                                );
-                                return;
-                            }
-                        };
-                        master_update_data(
-                            oowindow.as_ref(),
-                            None,
-                            Some((label_ivalue, Some(&encrypted_master))),
-                        );
+                            master_update_data(
+                                oowindow.as_ref(),
+                                None,
+                                Some((*vcindex_drc.borrow().get(), Some(&encrypted_master))),
+                            );
+                        } else {
+                            show_alert(
+                                oowindow.as_ref(),
+                                "Error",
+                                "Failed to encrypt master vault.",
+                            );
+                        }
                     });
 
                 let mut vault_count: i16 = 0;
@@ -574,34 +542,34 @@ fn open_main(application: &gtk4::Application) {
                     }
                     let vlist_button = gtk4::Button::with_label(name);
                     let oapplrc = Rc::clone(&oapprc);
+                    let vcount_at = vault_count.clone();
                     let selwindow_rc = Rc::clone(&selwindow);
                     let vcommlabel = Rc::clone(&vcomm_label);
                     let vcommindex = Rc::clone(&vcomm_index);
                     vlist_button.connect_clicked(move |_| {
-                        let vcount_at = vault_count.clone();
                         vcommindex.borrow_mut().set(vcount_at);
-                        let vault_opt =
-                            master_read_vault_at(selwindow_rc.as_ref(), vcount_at as usize);
-                        if vault_opt.is_none() {
-                            return;
-                        }
-                        let (vault_nonce, vault_data) = vault_opt.unwrap();
-                        let demast_vault = match decrypt_aes(
-                            selwindow_rc.as_ref(),
-                            &vault_data,
-                            vault_nonce,
-                            true,
-                        ) {
-                            Some(b) => b,
-                            None => return,
-                        };
-                        let (demast_vault_noncev, demast_vault_datav) = demast_vault.split_at(12);
-                        let demast_vault_nonce: [u8; 12] = demast_vault_noncev.try_into().unwrap();
-                        selwindow_rc.close();
-                        vault::ask_vault_password_and_open(
+                        let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+                        std::thread::spawn(move || {
+                            let vault_opt =
+                                master_read_vault_at(None::<&gtk4::Window>, vcount_at as usize);
+                            if vault_opt.is_none() {
+                                return;
+                            }
+                            let (vault_nonce, vault_data) = vault_opt.unwrap();
+                            if let Some(demast_vault) =
+                                decrypt_aes(None::<&gtk4::Window>, &vault_data, vault_nonce, true)
+                            {
+                                let _ = v_sender.send(demast_vault);
+                            } else {
+                                drop(v_sender);
+                            }
+                        });
+
+                        vault::ask_vault_password_and_open_async(
                             Rc::clone(&oapplrc),
-                            (demast_vault_nonce, demast_vault_datav.to_vec()),
+                            v_receiver,
                             Rc::clone(&vcommlabel),
+                            Rc::clone(&selwindow_rc),
                         );
                     });
                     sellist.append(&vlist_button);
@@ -645,7 +613,7 @@ fn open_main(application: &gtk4::Application) {
                     move |_| {
                         let mast_key = Rc::new(hashify_sha256(pw_box.text().to_string()));
                         let vname_opt = decrypt_aes_with_key(
-                            &pw_window,
+                            Some(&pw_window),
                             &vname_cipher,
                             vname_info[1..13].try_into().unwrap(),
                             &mast_key,
@@ -665,31 +633,30 @@ fn open_main(application: &gtk4::Application) {
                         // Save after user edited data inside vault
                         let ooowindow = Rc::clone(&oowindow);
                         let mkey_rc = Rc::clone(&mast_key);
-                        let vcommindex = Rc::clone(&vcomm_index);
+                        let vcindex_urc = Rc::clone(&vcomm_index);
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
-                                let label_ivalue = *vcommindex.borrow().get();
-                                let encrypted_master = match encrypt_aes_with_key(
+                                if let Some(encrypted_master) = encrypt_aes_with_key(
                                     ooowindow.as_ref(),
                                     &hex_to_u8(&label.text().to_string()).unwrap(),
                                     mkey_rc.as_ref(),
                                 ) {
-                                    Some(s) => s,
-                                    None => {
-                                        show_alert(
-                                            ooowindow.as_ref(),
-                                            "Error",
-                                            "Failed to encrypt master vault.",
-                                        );
-                                        return;
-                                    }
-                                };
-                                master_update_data(
-                                    ooowindow.as_ref(),
-                                    None,
-                                    Some((label_ivalue, Some(&encrypted_master))),
-                                );
+                                    master_update_data(
+                                        ooowindow.as_ref(),
+                                        None,
+                                        Some((
+                                            *vcindex_urc.borrow().get(),
+                                            Some(&encrypted_master),
+                                        )),
+                                    );
+                                } else {
+                                    show_alert(
+                                        ooowindow.as_ref(),
+                                        "Error",
+                                        "Failed to encrypt master vault.",
+                                    );
+                                }
                             });
 
                         let mut vault_count: i16 = 0;
@@ -699,22 +666,42 @@ fn open_main(application: &gtk4::Application) {
                             }
                             let vlist_button = gtk4::Button::with_label(name);
                             let oapplrc = Rc::clone(&oapprc);
+                            let vcount_at = vault_count.clone();
+                            let mkey_lrc = Rc::clone(&mast_key);
                             let selwindow_rc = Rc::clone(&selwindow);
                             let vcommindex = Rc::clone(&vcomm_index);
                             let vcommlabel = Rc::clone(&vcomm_label);
                             vlist_button.connect_clicked(move |_| {
-                                let vcount_at = vault_count.clone();
                                 vcommindex.borrow_mut().set(vcount_at);
-                                let vault_opt =
-                                    master_read_vault_at(selwindow_rc.as_ref(), vcount_at as usize);
-                                if vault_opt.is_none() {
-                                    return;
-                                }
+                                let mkey_raw = mkey_lrc.as_ref().to_owned();
+                                let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+                                std::thread::spawn(move || {
+                                    let vault_opt = master_read_vault_at(
+                                        None::<&gtk4::Window>,
+                                        vcount_at as usize,
+                                    );
+                                    if vault_opt.is_none() {
+                                        return;
+                                    }
+                                    let (vault_nonce, vault_data) = vault_opt.unwrap();
+                                    if let Some(demast_vault) = decrypt_aes_with_key(
+                                        None::<&gtk4::Window>,
+                                        &vault_data,
+                                        vault_nonce,
+                                        &mkey_raw,
+                                        true,
+                                    ) {
+                                        let _ = v_sender.send(demast_vault);
+                                    } else {
+                                        drop(v_sender);
+                                    }
+                                });
                                 selwindow_rc.close();
-                                vault::ask_vault_password_and_open(
+                                vault::ask_vault_password_and_open_async(
                                     Rc::clone(&oapplrc),
-                                    vault_opt.unwrap(),
+                                    v_receiver,
                                     Rc::clone(&vcommlabel),
+                                    Rc::clone(&selwindow_rc),
                                 );
                             });
                             sellist.append(&vlist_button);
@@ -777,17 +764,16 @@ fn open_main(application: &gtk4::Application) {
             selvbox.append(&selscroll);
             selwindow.set_child(Some(&selvbox));
 
-            let ovname_data = master_read_vname(selwindow.as_ref());
-            if ovname_data.is_none() {
-                return;
-            }
-            let (vname_info, vname_cipher) = ovname_data.unwrap();
+            let (vname_info, vname_cipher) = match master_read_vname(selwindow.as_ref()) {
+                Some((vn_info, vn_cipher)) => (vn_info, vn_cipher),
+                None => return,
+            };
 
             // Decrypt master
             if &[vname_info[0]] == b"d" {
                 // Default encryption
                 let vname_data_opt = decrypt_aes(
-                    selwindow.as_ref(),
+                    Some(selwindow.as_ref()),
                     &vname_cipher,
                     vname_info[1..13].try_into().unwrap(),
                     true,
@@ -807,7 +793,8 @@ fn open_main(application: &gtk4::Application) {
 
                 let ddwindow = Rc::clone(&dwindow);
                 let vcomm_label = Rc::new(RefCell::new(gtk4::Label::new(None)));
-                let vcomm_index = Rc::new(RefCell::new(I16Container::new(-1)));
+                let vcomm_index: Rc<RefCell<ItemContainer<i16>>> =
+                    Rc::new(RefCell::new(ItemContainer::new(-1)));
 
                 let vcommindex = Rc::clone(&vcomm_index);
                 let selwindow_rc = Rc::clone(&selwindow);
@@ -881,11 +868,12 @@ fn open_main(application: &gtk4::Application) {
                     #[weak]
                     application,
                     move |_| {
+                        let master_pw = Rc::new(hashify_sha256(pw_box.text().to_string()));
                         let vname_data_opt = decrypt_aes_with_key(
-                            pwwindow_rc.as_ref(),
+                            Some(pwwindow_rc.as_ref()),
                             &vname_cipher,
                             vname_info[1..13].try_into().unwrap(),
-                            &hashify_sha256(pw_box.text().to_string()),
+                            master_pw.as_ref(),
                             false,
                         );
                         if vname_data_opt.is_none() {
@@ -910,16 +898,21 @@ fn open_main(application: &gtk4::Application) {
 
                         let dddwindow = Rc::clone(&ddwindow);
                         let vcomm_label = Rc::new(RefCell::new(gtk4::Label::new(None)));
-                        let vcomm_index = Rc::new(RefCell::new(I16Container::new(-1)));
+                        let vcomm_index: Rc<RefCell<ItemContainer<i16>>> =
+                            Rc::new(RefCell::new(ItemContainer::new(-1)));
 
+                        let masterpw_rc = Rc::clone(&master_pw);
                         let vcommindex = Rc::clone(&vcomm_index);
                         let selwindow_drc = Rc::clone(&selwindow_rc);
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
                                 // Update vname
-                                let vname_cipher_opt =
-                                    encrypt_aes(selwindow_drc.as_ref(), &label.text().as_bytes());
+                                let vname_cipher_opt = encrypt_aes_with_key(
+                                    selwindow_drc.as_ref(),
+                                    &label.text().as_bytes(),
+                                    masterpw_rc.as_ref(),
+                                );
                                 if vname_cipher_opt.is_none() {
                                     return;
                                 }
@@ -927,7 +920,7 @@ fn open_main(application: &gtk4::Application) {
                                 let label_ivalue = *vcommindex.borrow().get();
                                 master_update_data(
                                     selwindow_drc.as_ref(),
-                                    Some((b"d", vname_cipher_opt.unwrap())),
+                                    Some((b"u", vname_cipher_opt.unwrap())),
                                     Some((label_ivalue, None)),
                                 );
                                 selwindow_drc.close();
@@ -969,19 +962,18 @@ fn open_main(application: &gtk4::Application) {
 
     // Check if this is fresh
     // Get path
-    let ovaultpath = get_vault_path();
-    if ovaultpath.is_none() {
+    if let Some(vaultpath) = get_vault_path() {
+        // Try to create new file, true if new
+        if let Ok(file) = fs::File::create_new(&vaultpath) {
+            // Fresh install, do some setup
+            baseaes_setup(&application, Rc::clone(&window), file, vaultpath);
+        };
+    } else {
         show_alert(
             window.as_ref(),
             "Error",
             "Failed to detect the path to 'master.vbase'.",
         );
-    }
-    let vaultpath = ovaultpath.unwrap();
-    // Try to create new file, true if new
-    if let Ok(file) = fs::File::create_new(&vaultpath) {
-        // Fresh install, do some setup
-        baseaes_setup(&application, Rc::clone(&window), file, vaultpath);
     };
 }
 

@@ -5,6 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc::TryRecvError;
 
 use crate::tools::*;
 use crate::types::*;
@@ -23,14 +24,7 @@ pub fn ask_vault_password_and_open(
     );
     vopen_window.set_application(Some(application.as_ref()));
 
-    let vopen_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(12)
-        .column_spacing(12)
-        .build();
+    let vopen_grid = grid_builder(6, 6, 12, 12, 12, 12).build();
 
     // Password label
     let vopen_pass_label = gtk4::Label::new(Some("Vault Password:"));
@@ -46,24 +40,22 @@ pub fn ask_vault_password_and_open(
     vopen_ok_button.connect_clicked(move |_| {
         // Decode
         let vault_password = Rc::new(hashify_sha256(vopen_pass_box.text().to_string()));
-        let vault_raw = match decrypt_aes_with_key(
-            vopen_window_rc.as_ref(),
+        let vault_raw = decrypt_aes_with_key(
+            Some(vopen_window_rc.as_ref()),
             &vault_data.1,
             vault_data.0,
             vault_password.as_ref(),
             false,
-        ) {
-            Some(bin) => bin,
-            None => {
-                show_alert(
-                    vopen_window_rc.as_ref(),
-                    "Alert",
-                    "Vault decryption failed.\nThe password is incorrect, or the vault is broken.",
-                );
-                return;
-            }
-        };
-        let rvault_text = String::from_utf8(vault_raw);
+        );
+        if vault_raw.is_none() {
+            show_alert(
+                vopen_window_rc.as_ref(),
+                "Alert",
+                "Vault decryption failed.\nThe password is incorrect, or the vault is broken.",
+            );
+            return;
+        }
+        let rvault_text = String::from_utf8(vault_raw.unwrap());
         if rvault_text.is_err() {
             show_alert(
                 vopen_window_rc.as_ref(),
@@ -88,14 +80,94 @@ pub fn ask_vault_password_and_open(
     vopen_window.present();
 }
 
-fn get_text_from_cwin(window: &gtk4::ScrolledWindow) -> Option<glib::GString> {
-    let textview: gtk4::TextView =
-        match window.child()?.first_child()?.first_child()?.dynamic_cast() {
-            Ok(t) => t,
-            Err(_) => return None,
-        };
-    let bounds = textview.buffer().bounds();
-    Some(textview.buffer().text(&bounds.0, &bounds.1, true))
+pub fn ask_vault_password_and_open_async(
+    application: Rc<gtk4::Application>,
+    vault_data: std::sync::mpsc::Receiver<Vec<u8>>,
+    vcommlabel: Rc<RefCell<gtk4::Label>>,
+    selwindow_rc: Rc<gtk4::Window>,
+) {
+    // Ask vault password
+    let vopen_window = Rc::new(
+        gtk4::Window::builder()
+            .title("Unlock vault")
+            .modal(true)
+            .build(),
+    );
+    vopen_window.set_application(Some(application.as_ref()));
+
+    let vopen_grid = grid_builder(6, 6, 12, 12, 12, 12).build();
+
+    // Password label
+    let vopen_pass_label = gtk4::Label::new(Some("Vault Password:"));
+    vopen_grid.attach(&vopen_pass_label, 1, 1, 1, 1);
+    // Password input box
+    let vopen_pass_boxr = gtk4::PasswordEntry::new();
+    vopen_pass_boxr.set_size_request(120, 24);
+    vopen_grid.attach(&vopen_pass_boxr, 1, 2, 1, 1);
+    let vopen_pass_box = Rc::new(vopen_pass_boxr);
+    // Confirm button
+    let vopen_ok_button = gtk4::Button::with_label("OK");
+    let vopen_window_rc = Rc::clone(&vopen_window);
+    vopen_ok_button.connect_clicked(move |_| match vault_data.try_recv() {
+        Ok(data) => {
+            selwindow_rc.close();
+            let (nonce_s, data_s) = data.split_at(12);
+            let nonce: [u8; 12] = nonce_s.try_into().unwrap();
+            // Decode
+            let vault_password = Rc::new(hashify_sha256(vopen_pass_box.text().to_string()));
+            let vault_raw = decrypt_aes_with_key(
+                Some(vopen_window_rc.as_ref()),
+                data_s,
+                nonce,
+                vault_password.as_ref(),
+                false,
+            );
+            if vault_raw.is_none() {
+                show_alert(
+                    vopen_window_rc.as_ref(),
+                    "Alert",
+                    "Vault decryption failed.\nThe password is incorrect, or the vault is broken.",
+                );
+                return;
+            }
+            let rvault_text = String::from_utf8(vault_raw.unwrap());
+            if rvault_text.is_err() {
+                show_alert(
+                    vopen_window_rc.as_ref(),
+                    "Error",
+                    "Could not convert decrypted vault data.\nThe data may be broken.",
+                );
+                return;
+            };
+            // Vault decryption is successful here
+            vopen_window_rc.close();
+
+            open_vault(
+                Rc::clone(&application),
+                Rc::new(rvault_text.unwrap()),
+                Rc::clone(&vcommlabel),
+                Rc::clone(&vault_password),
+            );
+        }
+        Err(TryRecvError::Empty) => {
+            show_alert(
+                vopen_window_rc.as_ref(),
+                "Sorry",
+                "Vault data loading is not finished.\nPlease try again in a few seconds.",
+            );
+        }
+        Err(TryRecvError::Disconnected) => {
+            show_alert(
+                vopen_window_rc.as_ref(),
+                "Error",
+                "Failed to load vault data. Close this 'Unlock vault' window and try again.",
+            );
+        }
+    });
+    vopen_grid.attach(&vopen_ok_button, 2, 2, 1, 1);
+
+    vopen_window.set_child(Some(&vopen_grid));
+    vopen_window.present();
 }
 
 fn open_vault(
@@ -114,76 +186,79 @@ fn open_vault(
     let vname = Rc::new(vault_data.0);
     let vindex = Rc::new(RefCell::new(vault_data.1));
     let vdata = Rc::new(RefCell::new(vault_data.2));
+    let changed = Rc::new(RefCell::new(ItemContainer::new(false)));
 
     // Image processing handler
     let idcs = Rc::new(RefCell::new(ImgDecodingController::new()));
     let (sender, receiver) = std::sync::mpsc::channel::<(u32, RawPixbuf)>();
     let idcs_trc = Rc::clone(&idcs);
     // Image decoding request handler
-    glib::source::timeout_add_local(std::time::Duration::from_millis(20), move || {
-        // Fetch decoding result
-        if let Ok((idx, pb_raw)) = receiver.try_recv() {
-            if let Some(img_rc) = idcs_trc.borrow_mut().image_provider.get(&idx) {
-                let rowstride = pb_raw.width * if pb_raw.has_alpha { 4 } else { 3 };
-                img_rc.set_from_pixbuf(Some(&gtk4::gdk_pixbuf::Pixbuf::from_bytes(
-                    &glib::Bytes::from_owned(pb_raw.data),
-                    gtk4::gdk_pixbuf::Colorspace::Rgb,
-                    pb_raw.has_alpha,
-                    8,
-                    pb_raw.width,
-                    pb_raw.height,
-                    rowstride,
-                )));
-            } else {
-                drop(pb_raw);
-            };
-            idcs_trc.borrow_mut().image_provider.remove(&idx);
-            idcs_trc.borrow_mut().is_processing = false;
-        }
-
-        // Check decode request
-        if !idcs_trc.borrow().is_processing {
-            let oimg_kv = {
-                let idcs_trc_reader = idcs_trc.borrow();
-                match idcs_trc_reader.queue.first_key_value() {
-                    Some(kv) => Some((kv.0.clone(), kv.1.clone())),
-                    None => None,
-                }
-            };
-            if oimg_kv.is_some() {
-                let (img_id, image_raw) = oimg_kv.unwrap();
-                idcs_trc.borrow_mut().is_processing = true;
-
-                let ssender = sender.clone();
-                let img_data = image_raw.data.clone();
-                match image_raw.imgtype {
-                    IDCSImageType::Png => {
-                        std::thread::spawn(move || {
-                            if let Some(rawpb) = get_rpixbuf_from_png_u8(img_data) {
-                                let _ = ssender.send((img_id, rawpb));
-                            }
-                        });
-                    }
-                    IDCSImageType::Jpeg => {
-                        std::thread::spawn(move || {
-                            if let Some(rawpb) = get_rpixbuf_from_jpeg_u8(img_data) {
-                                let _ = ssender.send((img_id, rawpb));
-                            }
-                        });
-                    }
-                    IDCSImageType::Webp => {
-                        std::thread::spawn(move || {
-                            if let Some(rawpb) = get_rpixbuf_from_webp_u8(img_data) {
-                                let _ = ssender.send((img_id, rawpb));
-                            }
-                        });
-                    }
-                }
-                idcs_trc.borrow_mut().queue.remove(&img_id);
+    let handler_raw =
+        glib::source::timeout_add_local(std::time::Duration::from_millis(20), move || {
+            // Fetch decoding result
+            if let Ok((idx, pb_raw)) = receiver.try_recv() {
+                if let Some(img_rc) = idcs_trc.borrow_mut().image_provider.get(&idx) {
+                    let rowstride = pb_raw.width * if pb_raw.has_alpha { 4 } else { 3 };
+                    img_rc.set_pixbuf(Some(&gtk4::gdk_pixbuf::Pixbuf::from_bytes(
+                        &glib::Bytes::from_owned(pb_raw.data),
+                        gtk4::gdk_pixbuf::Colorspace::Rgb,
+                        pb_raw.has_alpha,
+                        8,
+                        pb_raw.width,
+                        pb_raw.height,
+                        rowstride,
+                    )));
+                } else {
+                    drop(pb_raw);
+                };
+                idcs_trc.borrow_mut().image_provider.remove(&idx);
+                idcs_trc.borrow_mut().is_processing = false;
             }
-        }
-        glib::ControlFlow::Continue
-    });
+
+            // Check decode request
+            if !idcs_trc.borrow().is_processing {
+                let oimg_kv = {
+                    let idcs_trc_reader = idcs_trc.borrow();
+                    match idcs_trc_reader.queue.first_key_value() {
+                        Some(kv) => Some((kv.0.clone(), kv.1.clone())),
+                        None => None,
+                    }
+                };
+                if oimg_kv.is_some() {
+                    let (img_id, image_raw) = oimg_kv.unwrap();
+                    idcs_trc.borrow_mut().is_processing = true;
+
+                    let ssender = sender.clone();
+                    let img_data = image_raw.data.clone();
+                    match image_raw.imgtype {
+                        IDCSImageType::Png => {
+                            std::thread::spawn(move || {
+                                if let Some(rawpb) = get_rpixbuf_from_png_u8(img_data) {
+                                    let _ = ssender.send((img_id, rawpb));
+                                }
+                            });
+                        }
+                        IDCSImageType::Jpeg => {
+                            std::thread::spawn(move || {
+                                if let Some(rawpb) = get_rpixbuf_from_jpeg_u8(img_data) {
+                                    let _ = ssender.send((img_id, rawpb));
+                                }
+                            });
+                        }
+                        IDCSImageType::Webp => {
+                            std::thread::spawn(move || {
+                                if let Some(rawpb) = get_rpixbuf_from_webp_u8(img_data) {
+                                    let _ = ssender.send((img_id, rawpb));
+                                }
+                            });
+                        }
+                    }
+                    idcs_trc.borrow_mut().queue.remove(&img_id);
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+    let handler = Rc::new(RefCell::new(Some(handler_raw)));
 
     // Window
     let vault_window = Rc::new(gtk4::Window::new());
@@ -198,14 +273,7 @@ fn open_vault(
         .build();
 
     // Item grid, right side of the vault window
-    let item_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(6)
-        .column_spacing(6)
-        .build();
+    let item_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
     // Item name
     let item_viewer_titlei = gtk4::Label::new(Some("Click to open files..."));
@@ -235,9 +303,10 @@ fn open_vault(
     item_save_button.set_hexpand(false);
 
     // Rc suffix: _ras
-    let vdata_ras = Rc::clone(&vdata);
-    let iviewer_window_ras = Rc::clone(&item_viewer);
     let iviewer_title_ras = Rc::clone(&item_viewer_title);
+    let iviewer_window_ras = Rc::clone(&item_viewer);
+    let changed_ras = Rc::clone(&changed);
+    let vdata_ras = Rc::clone(&vdata);
     item_save_button.connect_clicked(move |_| {
         if !iviewer_title_ras.borrow().text().ends_with("*") {
             return;
@@ -256,19 +325,12 @@ fn open_vault(
             .insert(item_key, text.as_bytes().to_owned());
         let nochanges_title = iviewer_title_ras.borrow().text().replace("  *", "");
         iviewer_title_ras.borrow_mut().set_text(&nochanges_title);
+        changed_ras.borrow_mut().set(true);
     });
     item_grid.attach(&item_save_button, 2, 1, 1, 1);
 
     // Control grid, left side of the vault window
-    let control_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(8)
-        .column_spacing(8)
-        .vexpand(true)
-        .build();
+    let control_grid = grid_builder(6, 12, 12, 12, 8, 8).vexpand(true).build();
 
     // Path viewer
     let vexplorer_pathi = gtk4::Entry::builder().text("/").editable(false).build();
@@ -320,13 +382,14 @@ fn open_vault(
     // Rc suffix: _rcf
     let iviewer_title_rcf = Rc::clone(&item_viewer_title);
     let vfilelist_rcf = Rc::clone(&vault_file_list);
-    let iviewer_rcf = Rc::clone(&item_viewer);
-    let app_rcf = Rc::clone(&application);
-    let idcs_rcf = Rc::clone(&idcs);
-    let vindex_rcf = Rc::clone(&vindex);
     let vexpath_rcf = Rc::clone(&vexplorer_path);
-    let vdata_rcf = Rc::clone(&vdata);
+    let iviewer_rcf = Rc::clone(&item_viewer);
     let popover_rcf = Rc::clone(&vaf_popover);
+    let changed_rcf = Rc::clone(&changed);
+    let app_rcf = Rc::clone(&application);
+    let vindex_rcf = Rc::clone(&vindex);
+    let vdata_rcf = Rc::clone(&vdata);
+    let idcs_rcf = Rc::clone(&idcs);
     vaf_createb.connect_clicked(move |_| {
         popover_rcf.popdown();
         let vcf_window = Rc::new(gtk4::Window::new());
@@ -335,14 +398,7 @@ fn open_vault(
         vcf_window.set_size_request(180, 72);
         vcf_window.set_modal(true);
 
-        let vcf_grid = gtk4::Grid::builder()
-            .margin_top(6)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .row_spacing(6)
-            .column_spacing(6)
-            .build();
+        let vcf_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
         let vcf_title = gtk4::Label::new(Some("Enter file name:"));
         vcf_title.add_css_class("big");
@@ -356,15 +412,16 @@ fn open_vault(
         vcf_ok_button.set_size_request(64, 28);
 
         // Rc suffix: _rcf2
-        let app_rcf2 = Rc::clone(&app_rcf);
-        let idcs_rcf2 = Rc::clone(&idcs_rcf);
-        let vcf_window_rcf2 = Rc::clone(&vcf_window);
         let iviewer_title_rcf2 = Rc::clone(&iviewer_title_rcf);
         let vfilelist_rcf2 = Rc::clone(&vfilelist_rcf);
+        let vcf_window_rcf2 = Rc::clone(&vcf_window);
         let iviewer_rcf2 = Rc::clone(&iviewer_rcf);
-        let vindex_rcf2 = Rc::clone(&vindex_rcf);
         let vexpath_rcf2 = Rc::clone(&vexpath_rcf);
+        let changed_rcf2 = Rc::clone(&changed_rcf);
+        let vindex_rcf2 = Rc::clone(&vindex_rcf);
         let vdata_rcf2 = Rc::clone(&vdata_rcf);
+        let idcs_rcf2 = Rc::clone(&idcs_rcf);
+        let app_rcf2 = Rc::clone(&app_rcf);
         vcf_ok_button.connect_clicked(move |_| {
             // File name filtering
             let filename = vcf_filename.text().to_string();
@@ -401,6 +458,7 @@ fn open_vault(
                 Rc::clone(&vindex_rcf2),
                 Rc::clone(&vdata_rcf2),
             ));
+            changed_rcf2.borrow_mut().set(true);
 
             // Reload file
             loop {
@@ -434,14 +492,7 @@ fn open_vault(
                 discard_window.set_title(Some("Discard changes?"));
                 discard_window.set_default_size(220, 48);
                 discard_window.set_modal(true);
-                let discard_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(12)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(6)
-                    .column_spacing(6)
-                    .build();
+                let discard_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
                 let discard_title = gtk4::Label::new(Some(&format!(
                     "Do you want to discard changes in '{}'?",
@@ -540,14 +591,15 @@ fn open_vault(
     // Rc suffix: _rif
     let iviewer_title_rif = Rc::clone(&item_viewer_title);
     let vfilelist_rif = Rc::clone(&vault_file_list);
+    let vexpath_rif = Rc::clone(&vexplorer_path);
     let vwindow_rif = Rc::clone(&vault_window);
     let iviewer_rif = Rc::clone(&item_viewer);
-    let app_rif = Rc::clone(&application);
-    let idcs_rif = Rc::clone(&idcs);
-    let vindex_rif = Rc::clone(&vindex);
-    let vexpath_rif = Rc::clone(&vexplorer_path);
-    let vdata_rif = Rc::clone(&vdata);
     let popover_rif = Rc::clone(&vaf_popover);
+    let changed_rif = Rc::clone(&changed);
+    let app_rif = Rc::clone(&application);
+    let vindex_rif = Rc::clone(&vindex);
+    let vdata_rif = Rc::clone(&vdata);
+    let idcs_rif = Rc::clone(&idcs);
     vaf_importb.connect_clicked(move |_| {
         popover_rif.popdown();
         let file_dialog = gtk4::FileDialog::builder()
@@ -556,16 +608,17 @@ fn open_vault(
             .build();
 
         // Rc suffix: _rif2
-        let app_rif2 = Rc::clone(&app_rif);
-        let idcs_rif2 = Rc::clone(&idcs_rif);
-        let vwindow_rifp = Rc::clone(&vwindow_rif);
-        let vwindow_rif2 = Rc::clone(&vwindow_rif);
-        let vfilelist_rif2 = Rc::clone(&vfilelist_rif);
-        let iviewer_title_rif2 = Rc::clone(&iviewer_title_rif);
-        let iviewer_rif2 = Rc::clone(&iviewer_rif);
-        let vexpath_rif2 = Rc::clone(&vexpath_rif);
+        let changed_rif2 = Rc::clone(&changed_rif);
         let vindex_rif2 = Rc::clone(&vindex_rif);
         let vdata_rif2 = Rc::clone(&vdata_rif);
+        let idcs_rif2 = Rc::clone(&idcs_rif);
+        let app_rif2 = Rc::clone(&app_rif);
+        let iviewer_title_rif2 = Rc::clone(&iviewer_title_rif);
+        let vfilelist_rif2 = Rc::clone(&vfilelist_rif);
+        let vwindow_rifp = Rc::clone(&vwindow_rif);
+        let vwindow_rif2 = Rc::clone(&vwindow_rif);
+        let iviewer_rif2 = Rc::clone(&iviewer_rif);
+        let vexpath_rif2 = Rc::clone(&vexpath_rif);
         file_dialog.open(
             Some(vwindow_rifp.as_ref()),
             gtk4::gio::Cancellable::NONE,
@@ -644,6 +697,7 @@ fn open_vault(
                     Rc::clone(&vindex_rif2),
                     Rc::clone(&vdata_rif2),
                 );
+                changed_rif2.borrow_mut().set(true);
 
                 // Reload file
                 loop {
@@ -680,27 +734,21 @@ fn open_vault(
     vault_add_folder.set_size_request(80, 48);
 
     // Rc suffix: _rad
+    let changed_rad = Rc::clone(&changed);
+    let app_rad = Rc::clone(&application);
+    let vindex_rad = Rc::clone(&vindex);
+    let vdata_rad = Rc::clone(&vdata);
+    let idcs_rad = Rc::clone(&idcs);
     let iviewer_title_rad = Rc::clone(&item_viewer_title);
     let vfilelist_rad = Rc::clone(&vault_file_list);
-    let iviewer_rad = Rc::clone(&item_viewer);
-    let app_rad = Rc::clone(&application);
-    let idcs_rad = Rc::clone(&idcs);
-    let vindex_rad = Rc::clone(&vindex);
     let vexpath_rad = Rc::clone(&vexplorer_path);
-    let vdata_rad = Rc::clone(&vdata);
+    let iviewer_rad = Rc::clone(&item_viewer);
     vault_add_folder.connect_clicked(move |_| {
         let vad_window = Rc::new(gtk4::Window::new());
         vad_window.set_title(Some("Add folder..."));
         vad_window.set_application(Some(app_rad.as_ref()));
         vad_window.set_modal(true);
-        let vad_grid = gtk4::Grid::builder()
-            .margin_top(6)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .row_spacing(12)
-            .column_spacing(8)
-            .build();
+        let vad_grid = grid_builder(6, 12, 12, 12, 12, 8).build();
 
         let vad_title = gtk4::Label::new(Some("Enter folder name:"));
         vad_title.add_css_class("big");
@@ -714,15 +762,16 @@ fn open_vault(
         vad_ok_button.set_size_request(64, 28);
 
         // Rc suffix: _rad2
-        let app_rad2 = Rc::clone(&app_rad);
+        let changed_rad2 = Rc::clone(&changed_rad);
+        let vindex_rad2 = Rc::clone(&vindex_rad);
+        let vdata_rad2 = Rc::clone(&vdata_rad);
         let idcs_rad2 = Rc::clone(&idcs_rad);
-        let vad_window_rad2 = Rc::clone(&vad_window);
+        let app_rad2 = Rc::clone(&app_rad);
         let iviewer_title_rad2 = Rc::clone(&iviewer_title_rad);
         let vfilelist_rad2 = Rc::clone(&vfilelist_rad);
+        let vad_window_rad2 = Rc::clone(&vad_window);
         let iviewer_rad2 = Rc::clone(&iviewer_rad);
-        let vindex_rad2 = Rc::clone(&vindex_rad);
         let vexpath_rad2 = Rc::clone(&vexpath_rad);
-        let vdata_rad2 = Rc::clone(&vdata_rad);
         vad_ok_button.connect_clicked(move |_| {
             // Folder name filtering
             let mut dirname = vad_dirname.text().to_string();
@@ -755,6 +804,7 @@ fn open_vault(
 
             // Append folder info
             vault_append_folder(Rc::clone(&vexpath_rad2), dirname, Rc::clone(&vindex_rad2));
+            changed_rad2.borrow_mut().set(true);
 
             // Reload file
             loop {
@@ -792,38 +842,44 @@ fn open_vault(
     vault_rename_item.set_size_request(80, 48);
 
     // Rc suffix: _rri
-    let idcs_rri = Rc::clone(&idcs);
-    let vdata_rri = Rc::clone(&vdata);
-    let vindex_rri = Rc::clone(&vindex);
+    let changed_rri = Rc::clone(&changed);
     let app_rri = Rc::clone(&application);
-    let vexpath_rri = Rc::clone(&vexplorer_path);
+    let vindex_rri = Rc::clone(&vindex);
+    let vdata_rri = Rc::clone(&vdata);
+    let idcs_rri = Rc::clone(&idcs);
     let iviewer_title_rri = Rc::clone(&item_viewer_title);
-    let iviewer_rri = Rc::clone(&item_viewer);
     let vfilelist_rri = Rc::clone(&vault_file_list);
+    let vexpath_rri = Rc::clone(&vexplorer_path);
+    let vwindow_rri = Rc::clone(&vault_window);
+    let iviewer_rri = Rc::clone(&item_viewer);
     vault_rename_item.connect_clicked(move |_| {
         let mut viewer_id = iviewer_title_rri.borrow().get_itext().to_owned();
         if viewer_id.ends_with("^") {
             viewer_id.pop();
         }
-        let (vfileid, vtitle) = viewer_id.split_once(":").unwrap();
+        let (vfileid, vtitle) = match viewer_id.split_once(":") {
+            Some(viewerid_sp) => viewerid_sp,
+            None => {
+                show_alert(
+                    vwindow_rri.as_ref(),
+                    "Alert",
+                    "No file is selected.\nSelect a file you want to rename and try again.",
+                );
+                return;
+            }
+        };
         let vri_window = Rc::new(gtk4::Window::new());
         vri_window.set_title(Some("Rename item..."));
         vri_window.set_application(Some(app_rri.as_ref()));
         vri_window.set_modal(true);
-        let vri_grid = gtk4::Grid::builder()
-            .margin_top(6)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .row_spacing(12)
-            .column_spacing(8)
-            .build();
+        let vri_grid = grid_builder(6, 12, 12, 12, 12, 8).build();
 
         let vri_title = gtk4::Label::new(Some(&format!("Rename '{vtitle}' to:")));
         vri_title.add_css_class("title");
         vri_grid.attach(&vri_title, 1, 1, 2, 1);
 
         let vri_nameboxr = gtk4::Entry::new();
+        vri_nameboxr.buffer().set_text(vtitle);
         vri_nameboxr.set_size_request(144, 28);
         vri_grid.attach(&vri_nameboxr, 1, 2, 1, 1);
         let vri_namebox = Rc::new(vri_nameboxr);
@@ -832,16 +888,18 @@ fn open_vault(
         vri_ok_button.set_size_request(40, 28);
 
         // Rc suffix: _rri2
-        let app_rri2 = Rc::clone(&app_rri);
-        let idcs_rri2 = Rc::clone(&idcs_rri);
-        let vdata_rri2 = Rc::clone(&vdata_rri);
+        let changed_rri2 = Rc::clone(&changed_rri);
         let vindex_rri2 = Rc::clone(&vindex_rri);
-        let vexpath_rri2 = Rc::clone(&vexpath_rri);
-        let vri_window_rri2 = Rc::clone(&vri_window);
-        let vri_namebox_rri2 = Rc::clone(&vri_namebox);
-        let vfileid_rri2 = Rc::new(PathBuf::from(vfileid));
-        let iviewer_rri2 = Rc::clone(&iviewer_rri);
+        let vdata_rri2 = Rc::clone(&vdata_rri);
+        let idcs_rri2 = Rc::clone(&idcs_rri);
+        let app_rri2 = Rc::clone(&app_rri);
         let iviewer_title_rri2 = Rc::clone(&iviewer_title_rri);
+        let vfileid_rri2 = Rc::new(PathBuf::from(vfileid));
+        let vri_namebox_rri2 = Rc::clone(&vri_namebox);
+        let vri_window_rri2 = Rc::clone(&vri_window);
+        let vexpath_rri2 = Rc::clone(&vexpath_rri);
+        let iviewer_rri2 = Rc::clone(&iviewer_rri);
+        let prev_name = vtitle.to_owned();
         let vfilelist_rri2 = Rc::clone(&vfilelist_rri);
         vri_ok_button.connect_clicked(move |_| {
             let newname = vri_namebox_rri2.text();
@@ -857,7 +915,10 @@ fn open_vault(
                     continue;
                 }
 
-                if name == &newname {
+                if &newname == &prev_name {
+                    vri_window_rri2.close();
+                    return;
+                } else if name == &newname {
                     show_alert(
                         vri_window_rri2.as_ref(),
                         "Alert",
@@ -881,6 +942,7 @@ fn open_vault(
 
             vindex_b.insert(rmres.unwrap().0, newname.to_string());
             drop(vindex_b);
+            changed_rri2.borrow_mut().set(true);
 
             loop {
                 let dwidget = match vfilelist_rri2.last_child() {
@@ -944,31 +1006,24 @@ fn open_vault(
         .vexpand(true)
         .build();
 
-    let voc_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(8)
-        .column_spacing(8)
-        .vexpand(true)
-        .build();
+    let voc_grid = grid_builder(6, 12, 12, 12, 8, 8).build();
 
     // Move item
     let voc_move_item = gtk4::Button::with_label("Move item");
     voc_move_item.set_size_request(96, 40);
 
     // Rc suffix: _rom
+    let changed_rom = Rc::clone(&changed);
+    let vindex_rom = Rc::clone(&vindex);
+    let vdata_rom = Rc::clone(&vdata);
+    let idcs_rom = Rc::clone(&idcs);
+    let app_rom = Rc::clone(&application);
     let iviewer_title_rom = Rc::clone(&item_viewer_title);
     let voc_button_rom = Rc::clone(&vault_other_ctrl);
     let vfilelist_rom = Rc::clone(&vault_file_list);
     let vexpath_rom = Rc::clone(&vexplorer_path);
     let vwindow_rom = Rc::clone(&vault_window);
     let iviewer_rom = Rc::clone(&item_viewer);
-    let vindex_rom = Rc::clone(&vindex);
-    let vdata_rom = Rc::clone(&vdata);
-    let idcs_rom = Rc::clone(&idcs);
-    let app_rom = Rc::clone(&application);
     voc_move_item.connect_clicked(move |_| {
         voc_button_rom.popdown();
         if vexpath_rom.borrow().text() == "/" {
@@ -983,8 +1038,8 @@ fn open_vault(
                     voc_button_rom.popdown();
                     show_alert(
                         vwindow_rom.as_ref(),
-                        "Error",
-                        "No file is selected.\nSelect a file you want to move, then try again.",
+                        "Alert",
+                        "No file is selected.\nSelect a file you want to move and try again.",
                     );
                     return;
                 }
@@ -995,15 +1050,8 @@ fn open_vault(
             imove_window.set_application(Some(app_rom.as_ref()));
             imove_window.set_size_request(240, 400);
 
-            let imove_grid = gtk4::Grid::builder()
-                .margin_top(6)
-                .margin_bottom(12)
-                .margin_start(12)
-                .margin_end(12)
-                .row_spacing(6)
-                .column_spacing(6)
-                .halign(gtk4::Align::Center)
-                .build();
+            let imove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+            imove_grid.set_halign(gtk4::Align::Center);
 
             // Path viewer
             let imove_expathi = gtk4::Entry::builder().text("/").editable(false).build();
@@ -1021,16 +1069,17 @@ fn open_vault(
             imove_cfbutton.set_size_request(80, 40);
 
             // Rc suffix: _romi
+            let changed_romi = Rc::clone(&changed_rom);
+            let vindex_romi = Rc::clone(&vindex_rom);
+            let vdata_romi = Rc::clone(&vdata_rom);
+            let idcs_romi = Rc::clone(&idcs_rom);
+            let app_romi = Rc::clone(&app_rom);
             let iviewer_title_romi = Rc::clone(&iviewer_title_rom);
             let vfilelist_romi = Rc::clone(&vfilelist_rom);
             let iviewer_romi = Rc::clone(&iviewer_rom);
             let vexpath_romi = Rc::clone(&vexpath_rom);
             let imwindow_rc = Rc::clone(&imove_window);
             let iexpath_rc = Rc::clone(&imove_expath);
-            let vindex_romi = Rc::clone(&vindex_rom);
-            let vdata_romi = Rc::clone(&vdata_rom);
-            let idcs_romi = Rc::clone(&idcs_rom);
-            let app_romi = Rc::clone(&app_rom);
             imove_cfbutton.connect_clicked(move |_| {
                 let (curr_ipath, name) =
                     match iviewer_title_romi.borrow().get_itext().split_once(":") {
@@ -1062,9 +1111,10 @@ fn open_vault(
                     Rc::clone(&vindex_romi),
                     Rc::clone(&vdata_romi),
                 );
+                changed_romi.borrow_mut().set(true);
                 iviewer_title_romi
                     .borrow_mut()
-                    .set_itext(new_ipath + ":" + &name + "^");
+                    .set_itext(new_ipath + ":" + &name);
 
                 let fileid = PathBuf::from(&fileid_str);
                 vindex_romi.borrow_mut().remove(&fileid);
@@ -1127,15 +1177,8 @@ fn open_vault(
             dmove_window.set_application(Some(app_rom.as_ref()));
             dmove_window.set_size_request(240, 400);
 
-            let dmove_grid = gtk4::Grid::builder()
-                .margin_top(6)
-                .margin_bottom(12)
-                .margin_start(12)
-                .margin_end(12)
-                .row_spacing(6)
-                .column_spacing(6)
-                .halign(gtk4::Align::Center)
-                .build();
+            let dmove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+            dmove_grid.set_halign(gtk4::Align::Center);
 
             // Path viewer
             let mut parent = PathBuf::from(vexpath_rom.borrow().text());
@@ -1161,16 +1204,17 @@ fn open_vault(
             dmove_cfbutton.set_size_request(80, 40);
 
             // Rc suffix: _romd
+            let changed_romd = Rc::clone(&changed_rom);
+            let vindex_romd = Rc::clone(&vindex_rom);
+            let vdata_romd = Rc::clone(&vdata_rom);
+            let idcs_romd = Rc::clone(&idcs_rom);
+            let app_romd = Rc::clone(&app_rom);
             let iviewer_title_romd = Rc::clone(&iviewer_title_rom);
             let vfilelist_romd = Rc::clone(&vfilelist_rom);
             let iviewer_romd = Rc::clone(&iviewer_rom);
             let vexpath_romd = Rc::clone(&vexpath_rom);
             let dmwindow_rc = Rc::clone(&dmove_window);
             let dexpath_rc = Rc::clone(&dmove_expath);
-            let vindex_romd = Rc::clone(&vindex_rom);
-            let vdata_romd = Rc::clone(&vdata_rom);
-            let idcs_romd = Rc::clone(&idcs_rom);
-            let app_romd = Rc::clone(&app_rom);
             dmove_cfbutton.connect_clicked(move |_| {
                 let from_path = vexpath_romd.borrow().get_itext().clone();
                 if &from_path == dexpath_rc.borrow().get_itext() {
@@ -1202,8 +1246,8 @@ fn open_vault(
                 }
 
                 // Do the actual copy
-                for (ipath, name) in copylist {
-                    let ipath = PathBuf::from(ipath);
+                for (ipath_str, name) in copylist {
+                    let ipath = PathBuf::from(ipath_str);
                     let fdata = match vdata_romd.borrow().get(&ipath) {
                         Some(d) => d.to_owned(),
                         None => {
@@ -1230,6 +1274,7 @@ fn open_vault(
                 // Remove the origin folder
                 let mut from_pb = PathBuf::from(from_path);
                 vindex_romd.borrow_mut().remove(&from_pb);
+                changed_romd.borrow_mut().set(true);
 
                 // Go up to the existing folder
                 let mut showpath = PathBuf::from(vexpath_romd.borrow().text());
@@ -1297,7 +1342,7 @@ fn open_vault(
             let vmi_window = Rc::new(gtk4::Window::new());
             vmi_window.set_title(Some("Select what to move..."));
             vmi_window.set_application(Some(app_rom.as_ref()));
-            vmi_window.set_size_request(160, 56);
+            vmi_window.set_size_request(224, 56);
             vmi_window.set_resizable(false);
             let vmi_hbox = gtk4::Box::builder()
                 .margin_top(6)
@@ -1313,16 +1358,17 @@ fn open_vault(
             vmi_mfile.set_size_request(96, 40);
 
             // Rc suffix: _romsf
-            let app_romsf = Rc::clone(&app_rom);
-            let idcs_romsf = Rc::clone(&idcs_rom);
+            let changed_romsf = Rc::clone(&changed_rom);
             let vindex_romsf = Rc::clone(&vindex_rom);
             let vdata_romsf = Rc::clone(&vdata_rom);
+            let idcs_romsf = Rc::clone(&idcs_rom);
+            let app_romsf = Rc::clone(&app_rom);
+            let iviewer_title_romsf = Rc::clone(&iviewer_title_rom);
+            let vfilelist_romsf = Rc::clone(&vfilelist_rom);
+            let vmi_window_romsf = Rc::clone(&vmi_window);
             let vwindow_romsf = Rc::clone(&vwindow_rom);
             let vexpath_romsf = Rc::clone(&vexpath_rom);
             let iviewer_romsf = Rc::clone(&iviewer_rom);
-            let vmi_window_romsf = Rc::clone(&vmi_window);
-            let vfilelist_romsf = Rc::clone(&vfilelist_rom);
-            let iviewer_title_romsf = Rc::clone(&iviewer_title_rom);
             vmi_mfile.connect_clicked(move |_| {
                 // Move file
                 vmi_window_romsf.close();
@@ -1348,15 +1394,8 @@ fn open_vault(
                 imove_window.set_application(Some(app_romsf.as_ref()));
                 imove_window.set_size_request(240, 400);
 
-                let imove_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(12)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(6)
-                    .column_spacing(6)
-                    .halign(gtk4::Align::Center)
-                    .build();
+                let imove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+                imove_grid.set_halign(gtk4::Align::Center);
 
                 // Path viewer
                 let imove_expathi = gtk4::Entry::builder()
@@ -1377,16 +1416,17 @@ fn open_vault(
                 imove_cfbutton.set_size_request(80, 40);
 
                 // Rc suffix: _romsfc
+                let changed_romsfc = Rc::clone(&changed_romsf);
+                let vindex_romsfc = Rc::clone(&vindex_romsf);
+                let vdata_romsfc = Rc::clone(&vdata_romsf);
+                let idcs_romsfc = Rc::clone(&idcs_romsf);
+                let app_romsfc = Rc::clone(&app_romsf);
                 let iviewer_title_romsfc = Rc::clone(&iviewer_title_romsf);
                 let vfilelist_romsfc = Rc::clone(&vfilelist_romsf);
                 let iviewer_romsfc = Rc::clone(&iviewer_romsf);
                 let vexpath_romsfc = Rc::clone(&vexpath_romsf);
                 let imwindow_rc = Rc::clone(&imove_window);
                 let iexpath_rc = Rc::clone(&imove_expath);
-                let vindex_romsfc = Rc::clone(&vindex_romsf);
-                let vdata_romsfc = Rc::clone(&vdata_romsf);
-                let idcs_romsfc = Rc::clone(&idcs_romsf);
-                let app_romsfc = Rc::clone(&app_romsf);
                 imove_cfbutton.connect_clicked(move |_| {
                     let (curr_ipath, name) =
                         match iviewer_title_romsfc.borrow().get_itext().split_once(":") {
@@ -1418,9 +1458,10 @@ fn open_vault(
                         Rc::clone(&vindex_romsfc),
                         Rc::clone(&vdata_romsfc),
                     );
+                    changed_romsfc.borrow_mut().set(true);
                     iviewer_title_romsfc
                         .borrow_mut()
-                        .set_itext(new_ipath + ":" + &name + "^");
+                        .set_itext(new_ipath + ":" + &name);
 
                     let fileid = PathBuf::from(&fileid_str);
                     vindex_romsfc.borrow_mut().remove(&fileid);
@@ -1483,15 +1524,16 @@ fn open_vault(
             vmi_mdir.set_size_request(96, 40);
 
             // Rc suffix: _romsd
-            let app_romsd = Rc::clone(&app_rom);
-            let idcs_romsd = Rc::clone(&idcs_rom);
+            let changed_romsd = Rc::clone(&changed_rom);
             let vindex_romsd = Rc::clone(&vindex_rom);
             let vdata_romsd = Rc::clone(&vdata_rom);
+            let idcs_romsd = Rc::clone(&idcs_rom);
+            let app_romsd = Rc::clone(&app_rom);
+            let iviewer_title_romsd = Rc::clone(&iviewer_title_rom);
+            let vfilelist_romsd = Rc::clone(&vfilelist_rom);
+            let vmi_window_romsd = Rc::clone(&vmi_window);
             let vexpath_romsd = Rc::clone(&vexpath_rom);
             let iviewer_romsd = Rc::clone(&iviewer_rom);
-            let vmi_window_romsd = Rc::clone(&vmi_window);
-            let vfilelist_romsd = Rc::clone(&vfilelist_rom);
-            let iviewer_title_romsd = Rc::clone(&iviewer_title_rom);
             vmi_mdir.connect_clicked(move |_| {
                 vmi_window_romsd.close();
 
@@ -1500,15 +1542,8 @@ fn open_vault(
                 dmove_window.set_application(Some(app_romsd.as_ref()));
                 dmove_window.set_size_request(240, 400);
 
-                let dmove_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(12)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(6)
-                    .column_spacing(6)
-                    .halign(gtk4::Align::Center)
-                    .build();
+                let dmove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+                dmove_grid.set_halign(gtk4::Align::Center);
 
                 // Path viewer
                 let mut parent = PathBuf::from(vexpath_romsd.borrow().text());
@@ -1534,16 +1569,17 @@ fn open_vault(
                 dmove_cfbutton.set_size_request(80, 40);
 
                 // Rc suffix: _romsdc
+                let changed_romsdc = Rc::clone(&changed_romsd);
+                let vindex_romsdc = Rc::clone(&vindex_romsd);
+                let vdata_romsdc = Rc::clone(&vdata_romsd);
+                let idcs_romsdc = Rc::clone(&idcs_romsd);
+                let app_romsdc = Rc::clone(&app_romsd);
                 let iviewer_title_romsdc = Rc::clone(&iviewer_title_romsd);
                 let vfilelist_romsdc = Rc::clone(&vfilelist_romsd);
                 let iviewer_romsdc = Rc::clone(&iviewer_romsd);
                 let vexpath_romsdc = Rc::clone(&vexpath_romsd);
                 let dmwindow_rc = Rc::clone(&dmove_window);
                 let dexpath_rc = Rc::clone(&dmove_expath);
-                let vindex_romsdc = Rc::clone(&vindex_romsd);
-                let vdata_romsdc = Rc::clone(&vdata_romsd);
-                let idcs_romsdc = Rc::clone(&idcs_romsd);
-                let app_romsdc = Rc::clone(&app_romsd);
                 dmove_cfbutton.connect_clicked(move |_| {
                     let from_path = vexpath_romsdc.borrow().get_itext().clone();
                     if &from_path == dexpath_rc.borrow().get_itext() {
@@ -1606,6 +1642,7 @@ fn open_vault(
                     // Remove the origin folder
                     let mut from_pb = PathBuf::from(from_path);
                     vindex_romsdc.borrow_mut().remove(&from_pb);
+                    changed_romsdc.borrow_mut().set(true);
 
                     // Go up to the existing folder
                     let mut showpath = PathBuf::from(vexpath_romsdc.borrow().text());
@@ -1727,6 +1764,7 @@ fn open_vault(
     let vwindow_roe = Rc::clone(&vault_window);
     let vdata_roe = Rc::clone(&vdata);
     voc_export_item.connect_clicked(move |_| {
+        voc_button_roe.popdown();
         let mut filename = iviewer_title_roe.borrow().get_itext().to_owned();
         if filename.ends_with("^") {
             filename.pop();
@@ -1734,7 +1772,6 @@ fn open_vault(
         let (fileid_str, title) = match filename.split_once(":") {
             Some(f) => f,
             None => {
-                voc_button_roe.popdown();
                 show_alert(
                     vwindow_roe.as_ref(),
                     "Error",
@@ -1819,16 +1856,17 @@ fn open_vault(
     voc_delete_item.set_size_request(96, 40);
 
     // Rc suffix: _rod
-    let iviewer_title_rod = Rc::clone(&item_viewer_title);
-    let voc_button_rod = Rc::clone(&vault_other_ctrl);
-    let vfilelist_rod = Rc::clone(&vault_file_list);
-    let iviewer_rod = Rc::clone(&item_viewer);
-    let vexpath_rod = Rc::clone(&vexplorer_path);
-    let vwindow_rod = Rc::clone(&vault_window);
+    let app_rod = Rc::clone(&application);
+    let changed_rod = Rc::clone(&changed);
     let vindex_rod = Rc::clone(&vindex);
     let vdata_rod = Rc::clone(&vdata);
     let idcs_rod = Rc::clone(&idcs);
-    let app_rod = Rc::clone(&application);
+    let iviewer_title_rod = Rc::clone(&item_viewer_title);
+    let voc_button_rod = Rc::clone(&vault_other_ctrl);
+    let vfilelist_rod = Rc::clone(&vault_file_list);
+    let vexpath_rod = Rc::clone(&vexplorer_path);
+    let vwindow_rod = Rc::clone(&vault_window);
+    let iviewer_rod = Rc::clone(&item_viewer);
     voc_delete_item.connect_clicked(move |_| {
         voc_button_rod.popdown();
         if &vexpath_rod.borrow().text() == "/" {
@@ -1843,6 +1881,7 @@ fn open_vault(
                 Rc::clone(&iviewer_rod),
                 Rc::clone(&vfilelist_rod),
                 Rc::clone(&iviewer_title_rod),
+                Rc::clone(&changed_rod),
                 false,
             );
         } else {
@@ -1850,7 +1889,7 @@ fn open_vault(
             let vdi_window = Rc::new(gtk4::Window::new());
             vdi_window.set_title(Some("Select what to delete..."));
             vdi_window.set_application(Some(app_rod.as_ref()));
-            vdi_window.set_size_request(160, 56);
+            vdi_window.set_size_request(224, 56);
             vdi_window.set_resizable(false);
             let vdi_hbox = gtk4::Box::builder()
                 .margin_top(6)
@@ -1871,6 +1910,7 @@ fn open_vault(
             let iviewer_rodf = Rc::clone(&iviewer_rod);
             let vexpath_rodf = Rc::clone(&vexpath_rod);
             let vdi_window_rodf = Rc::clone(&vdi_window);
+            let changed_rodf = Rc::clone(&changed_rod);
             let vindex_rodf = Rc::clone(&vindex_rod);
             let vdata_rodf = Rc::clone(&vdata_rod);
             let idcs_rodf = Rc::clone(&idcs_rod);
@@ -1886,6 +1926,7 @@ fn open_vault(
                     Rc::clone(&iviewer_rodf),
                     Rc::clone(&vfilelist_rodf),
                     Rc::clone(&iviewer_title_rodf),
+                    Rc::clone(&changed_rodf),
                     true
                 );
             });
@@ -1899,6 +1940,7 @@ fn open_vault(
             let vfilelist_rodd = Rc::clone(&vfilelist_rod);
             let iviewer_rodd = Rc::clone(&iviewer_rod);
             let vexpath_rodd = Rc::clone(&vexpath_rod);
+            let changed_rodd = Rc::clone(&changed_rod);
             let vdi_window_rodd = Rc::clone(&vdi_window);
             let vwindow_rodd = Rc::clone(&vwindow_rod);
             let vindex_rodd = Rc::clone(&vindex_rod);
@@ -1913,14 +1955,7 @@ fn open_vault(
                 delwindow.set_size_request(240, 96);
                 delwindow.set_modal(true);
 
-                let del_grid = gtk4::Grid::builder()
-                    .margin_top(12)
-                    .margin_bottom(12)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(6)
-                    .column_spacing(12)
-                    .build();
+                let del_grid = grid_builder(12, 12, 12, 12, 6, 12).build();
 
                 let currpath_str = Rc::new(vexpath_rodd.borrow().get_itext().to_owned());
                 let currpath_dirname = match vindex_rodd.borrow()
@@ -1944,8 +1979,8 @@ fn open_vault(
                 del_no_button.set_size_request(40, 28);
 
                 // Rc suffix: _roddn
-                let delwindow_roddn = Rc::clone(&delwindow);
                 let vdi_window_roddn = Rc::clone(&vdi_window_rodd);
+                let delwindow_roddn = Rc::clone(&delwindow);
                 del_no_button.connect_clicked(move |_| {
                     delwindow_roddn.close();
                     vdi_window_roddn.close();
@@ -1956,17 +1991,18 @@ fn open_vault(
                 del_yes_button.set_size_request(40, 28);
 
                 // Rc suffix: _roddy
-                let app_roddy = Rc::clone(&app_rodd);
-                let idcs_roddy = Rc::clone(&idcs_rodd);
-                let vindex_roddy = Rc::clone(&vindex_rodd);
-                let vdata_roddy = Rc::clone(&vdata_rodd);
-                let delwindow_roddy = Rc::clone(&delwindow);
-                let vdi_window_roddy = Rc::clone(&vdi_window_rodd);
                 let iviewer_title_roddy = Rc::clone(&iviewer_title_rodd);
+                let vfilelist_roddy = Rc::clone(&vfilelist_rodd);
+                let vdi_window_roddy = Rc::clone(&vdi_window_rodd);
+                let delwindow_roddy = Rc::clone(&delwindow);
+                let currpath_roddy = Rc::clone(&currpath_str);
                 let vexpath_roddy = Rc::clone(&vexpath_rodd);
                 let iviewer_roddy = Rc::clone(&iviewer_rodd);
-                let vfilelist_roddy = Rc::clone(&vfilelist_rodd);
-                let currpath_roddy = Rc::clone(&currpath_str);
+                let changed_roddy = Rc::clone(&changed_rodd);
+                let vindex_roddy = Rc::clone(&vindex_rodd);
+                let vdata_roddy = Rc::clone(&vdata_rodd);
+                let idcs_roddy = Rc::clone(&idcs_rodd);
+                let app_roddy = Rc::clone(&app_rodd);
                 del_yes_button.connect_clicked(move |_| {
                     let keys_to_remove: Vec<PathBuf> = vindex_roddy.borrow().keys()
                         .filter(|path| {path.starts_with(currpath_roddy.as_ref())}).cloned().collect();
@@ -1974,6 +2010,7 @@ fn open_vault(
                         vindex_roddy.borrow_mut().remove(&key);
                         vdata_roddy.borrow_mut().remove(&key);
                     }
+                    changed_roddy.borrow_mut().set(true);
 
                     // Go up
                     let mut newpath = PathBuf::from(vexpath_roddy.borrow().entry.text());
@@ -2057,22 +2094,18 @@ fn open_vault(
 
     // Closing event
     let wcl_app = Rc::clone(&application);
-    let commlabel_rc = Rc::clone(&commlabel);
+    let changed_crc = Rc::clone(&changed);
+    let handler_rc = Rc::clone(&handler);
     let iviewer_title_rc = Rc::clone(&item_viewer_title);
-    let iviewer_window_rc = Rc::clone(&item_viewer);
     let vault_password_rc = Rc::clone(&vault_password);
+    let iviewer_window_rc = Rc::clone(&item_viewer);
     let vault_window_rc = Rc::clone(&vault_window);
+    let commlabel_rc = Rc::clone(&commlabel);
     vault_window.connect_close_request(move |window| {
         if window.has_css_class("confirm_closure") {
-            return glib::Propagation::Proceed;
-        } else {
-            let final_string = Rc::new(get_vault_full_string(
-                Rc::clone(&vname),
-                Rc::clone(&vindex),
-                Rc::clone(&vdata),
-            ));
-            let hash_final = hashify_sha256_ref(&final_string);
-
+            handler_rc.borrow_mut().take().unwrap().remove();
+            glib::Propagation::Proceed
+        } else if changed_crc.borrow().get().to_owned() {
             // Check if there're any unsaved changes
             if iviewer_title_rc.borrow().text().ends_with("*") {
                 let isave_window = Rc::new(gtk4::Window::new());
@@ -2080,14 +2113,7 @@ fn open_vault(
                 isave_window.set_title(Some("Save file changes?"));
                 isave_window.set_default_size(180, 48);
                 isave_window.set_modal(true);
-                let isave_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(12)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(6)
-                    .column_spacing(6)
-                    .build();
+                let isave_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
                 let isave_title = gtk4::Label::new(Some(&format!(
                     "Do you want to save changes in {}?",
@@ -2103,16 +2129,16 @@ fn open_vault(
                 let isave_yes_button = gtk4::Button::with_label("Save");
                 isave_yes_button.set_size_request(60, 32);
 
-                let app_irc = Rc::clone(&wcl_app);
-                let vname_irc = Rc::clone(&vname);
-                let vdata_irc = Rc::clone(&vdata);
-                let vindex_irc = Rc::clone(&vindex);
-                let commlabel_irc = Rc::clone(&commlabel_rc);
+                let iviewer_window_irc = Rc::clone(&iviewer_window_rc);
+                let iviewer_title_irc = Rc::clone(&iviewer_title_rc);
+                let vpassword_irc = Rc::clone(&vault_password_rc);
                 let vwindow_irc = Rc::clone(&vault_window_rc);
                 let isave_window_irc = Rc::clone(&isave_window);
-                let vpassword_irc = Rc::clone(&vault_password_rc);
-                let iviewer_title_irc = Rc::clone(&iviewer_title_rc);
-                let iviewer_window_irc = Rc::clone(&iviewer_window_rc);
+                let commlabel_irc = Rc::clone(&commlabel_rc);
+                let vindex_irc = Rc::clone(&vindex);
+                let vdata_irc = Rc::clone(&vdata);
+                let vname_irc = Rc::clone(&vname);
+                let app_irc = Rc::clone(&wcl_app);
                 isave_yes_button.connect_clicked(move |_| {
                     isave_window_irc.close();
                     if !iviewer_title_irc.borrow().text().ends_with("*") {
@@ -2154,20 +2180,26 @@ fn open_vault(
                 let isave_no_button = gtk4::Button::with_label("Don't save");
                 isave_no_button.set_size_request(60, 32);
 
-                let app_rc = Rc::clone(&wcl_app);
-                let vname_rc = Rc::clone(&vname);
-                let fstring_rc = Rc::clone(&final_string);
-                let commlabel_rc = Rc::clone(&commlabel_rc);
-                let vwindow_rc = Rc::clone(&vault_window_rc);
-                let isave_window_nrc = Rc::clone(&isave_window);
                 let vpassword_rc = Rc::clone(&vault_password_rc);
+                let isave_window_nrc = Rc::clone(&isave_window);
+                let vwindow_rc = Rc::clone(&vault_window_rc);
+                let commlabel_rc = Rc::clone(&commlabel_rc);
+                let vindex_rc = Rc::clone(&vindex);
+                let vdata_rc = Rc::clone(&vdata);
+                let vname_rc = Rc::clone(&vname);
+                let app_rc = Rc::clone(&wcl_app);
                 isave_no_button.connect_clicked(move |_| {
+                    let final_string = Rc::new(get_vault_full_string(
+                        Rc::clone(&vname_rc),
+                        Rc::clone(&vindex_rc),
+                        Rc::clone(&vdata_rc),
+                    ));
                     isave_window_nrc.close();
                     save_vault(
                         Rc::clone(&app_rc),
                         Rc::clone(&vname_rc),
-                        Rc::clone(&fstring_rc),
-                        hash_final,
+                        Rc::clone(&final_string),
+                        hashify_sha256_ref(final_string.as_ref()),
                         Rc::clone(&vpassword_rc),
                         Rc::clone(&vwindow_rc),
                         Rc::clone(&commlabel_rc),
@@ -2188,6 +2220,13 @@ fn open_vault(
                 isave_window.present();
                 return glib::Propagation::Stop;
             } else {
+                let final_string = Rc::new(get_vault_full_string(
+                    Rc::clone(&vname),
+                    Rc::clone(&vindex),
+                    Rc::clone(&vdata),
+                ));
+                let hash_final = hashify_sha256_ref(&final_string);
+
                 if hash_initial != hash_final {
                     // Change detected!
                     save_vault(
@@ -2206,6 +2245,10 @@ fn open_vault(
                     return glib::Propagation::Proceed;
                 }
             }
+        } else {
+            vault_window_rc.add_css_class("confirm_closure");
+            vault_window_rc.close();
+            glib::Propagation::Proceed
         }
     });
 
@@ -2349,11 +2392,18 @@ pub fn get_files_from_vpath(
             let name_viewer_frc = Rc::clone(&name_viewer);
             let content_viewer_frc = Rc::clone(&content_viewer);
             lbutton.connect_clicked(move |_| {
-                let inamep_str = match name_viewer_frc.borrow().get_itext().split_once(":") {
-                    Some(s) => s.0.to_owned(),
-                    None => "".to_owned(),
-                };
-                if inamep_str.starts_with("/") && ipath_frc.as_os_str() == inamep_str.as_str() {
+                let (inamep_str, mut fname) =
+                    match name_viewer_frc.borrow().get_itext().split_once(":") {
+                        Some(s) => (s.0.to_owned(), s.1.to_owned()),
+                        None => (String::new(), String::new()),
+                    };
+                if fname.ends_with("^") {
+                    fname.pop();
+                }
+                if inamep_str.starts_with("/")
+                    && ipath_frc.as_os_str() == inamep_str.as_str()
+                    && !fname.ends_with("bgsf")
+                {
                     return;
                 }
 
@@ -2385,14 +2435,7 @@ pub fn get_files_from_vpath(
                     discard_window.set_title(Some("Discard changes?"));
                     discard_window.set_default_size(220, 48);
                     discard_window.set_modal(true);
-                    let discard_grid = gtk4::Grid::builder()
-                        .margin_top(6)
-                        .margin_bottom(12)
-                        .margin_start(12)
-                        .margin_end(12)
-                        .row_spacing(6)
-                        .column_spacing(6)
-                        .build();
+                    let discard_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
                     let discard_title = gtk4::Label::new(Some(&format!(
                         "Do you want to discard changes in '{}'?",
@@ -2616,13 +2659,7 @@ fn get_item_viewer_grid(
     let fmime = tree_magic_mini::from_u8(data);
 
     let iviewer_grid = Rc::new(
-        gtk4::Grid::builder()
-            .margin_top(6)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .row_spacing(6)
-            .column_spacing(6)
+        grid_builder(6, 12, 12, 12, 4, 4)
             .hexpand(true)
             .vexpand(true)
             .build(),
@@ -2639,11 +2676,13 @@ fn get_item_viewer_grid(
         // @item:2/1/2/1:/path/to/explain.txt
         //
         ititle_label.borrow_mut().label.set_text(title);
-        let warn_label = gtk4::Label::builder()
-            .wrap_mode(gtk4::pango::WrapMode::Word)
-            .build();
+        let warn_label = Rc::new(
+            gtk4::Label::builder()
+                .wrap_mode(gtk4::pango::WrapMode::Word)
+                .build(),
+        );
         warn_label.add_css_class("warning");
-        iviewer_grid.attach(&warn_label, 1, 1, 4, 1);
+        iviewer_grid.attach(warn_label.as_ref(), 1, 1, 4, 1);
 
         let mut lcount: u32 = 1;
         for line in data_utf8.unwrap().split("\n") {
@@ -2669,88 +2708,18 @@ fn get_item_viewer_grid(
                 }
             } else if line.starts_with("@item:") {
                 if let Some((style, path_str)) = bgsf_decode_item(line) {
-                    if let Some(dpath) = decode_path(Rc::clone(&vindex_rc), path_str) {
-                        let bdata_rc = vdata_rc.borrow();
-                        let pdata = match bdata_rc.get(&dpath) {
-                            Some(d) => d,
-                            None => {
-                                warn_label.set_text(&format!(
-                                    "{}\nWarning: The file doesn't exist at line {lcount}  ({path_str})",
-                                    warn_label.text()
-                                ));
-                                continue;
-                            }
-                        };
-                        // Predict filetype, again
-                        let lmime = tree_magic_mini::from_u8(pdata);
-
-                        if lmime.starts_with("text") {
-                            let text_viewer = gtk4::TextView::builder()
-                                .hexpand(true)
-                                .vexpand(true)
-                                .editable(false)
-                                .build();
-                            text_viewer.add_css_class("normal");
-                            text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
-                            text_viewer.buffer().set_text(
-                                str::from_utf8(pdata)
-                                .unwrap_or("Failed to read data as text. Data is saved but we're not able to show it.")
-                            );
-                            iviewer_grid.attach(
-                                &text_viewer,
-                                style[0],
-                                style[1] + 1,
-                                style[2],
-                                style[3],
-                            );
-                        } else if lmime == "image/png"
-                            || lmime == "image/jpeg"
-                            || lmime == "image/webp"
-                        {
-                            // Image parsing
-                            ititle_label.borrow_mut().label.set_text(title);
-                            let image_viewer =
-                                Rc::new(gtk4::Image::builder().hexpand(true).vexpand(true).build());
-
-                            idcs.borrow_mut().request_decode(
-                                IDCSImageType::from_str_name(lmime).unwrap(),
-                                pdata.to_owned(),
-                                Rc::clone(&image_viewer),
-                            );
-                            iviewer_grid.attach(
-                                image_viewer.as_ref(),
-                                style[0],
-                                style[1] + 1,
-                                style[2],
-                                style[3],
-                            );
-                        } else if fmime.starts_with("image") {
-                            let text_viewer = gtk4::TextView::builder()
-                                .hexpand(true)
-                                .vexpand(true)
-                                .editable(false)
-                                .build();
-                            text_viewer.add_css_class("normal");
-                            text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
-                            text_viewer
-                                .buffer()
-                                .set_text("Sorry, only PNG/JPEG/WebP Images are supported.");
-                            iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
-                        } else {
-                            let phlabel = gtk4::Label::new(Some(&format!("Decoded: {:?}", dpath)));
-                            iviewer_grid.attach(
-                                &phlabel,
-                                style[0],
-                                style[1] + 1,
-                                style[2],
-                                style[3],
-                            );
-                        }
-                    } else {
-                        warn_label.set_text(&format!(
-                            "{}\nWarning: Invalid path at line {lcount}  ({path_str})",
-                            warn_label.text()
-                        ));
+                    let parse_failed = bgsf_parse_item(
+                        Rc::clone(&iviewer_grid),
+                        Rc::clone(&warn_label),
+                        style,
+                        path_str,
+                        &lcount,
+                        Rc::clone(&idcs),
+                        Rc::clone(&vindex_rc),
+                        Rc::clone(&vdata_rc),
+                    );
+                    if parse_failed {
+                        continue;
                     }
                 } else {
                     warn_label.set_text(&format!(
@@ -2769,7 +2738,7 @@ fn get_item_viewer_grid(
     } else if fmime == "image/png" || fmime == "image/jpeg" || fmime == "image/webp" {
         // Show as image
         ititle_label.borrow_mut().label.set_text(title);
-        let image_viewer = Rc::new(gtk4::Image::builder().hexpand(true).vexpand(true).build());
+        let image_viewer = Rc::new(gtk4::Picture::builder().hexpand(true).vexpand(true).build());
 
         let owneddata = data.to_owned();
         idcs.borrow_mut().request_decode(
@@ -2783,9 +2752,9 @@ fn get_item_viewer_grid(
             .hexpand(true)
             .vexpand(true)
             .editable(false)
+            .wrap_mode(gtk4::WrapMode::Word)
             .build();
         text_viewer.add_css_class("normal");
-        text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
         text_viewer
             .buffer()
             .set_text("Sorry, only PNG/JPEG/WebP Images are supported.");
@@ -2826,9 +2795,9 @@ fn get_item_viewer_grid(
             .hexpand(true)
             .vexpand(true)
             .editable(false)
+            .wrap_mode(gtk4::WrapMode::Word)
             .build();
         text_viewer.add_css_class("normal");
-        text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
         text_viewer
             .buffer()
             .set_text("Editing/Viewing binary file will be implemented someday.");
@@ -2863,15 +2832,10 @@ fn vault_append_file(
         .borrow_mut()
         .insert(PathBuf::from(&file_pathcode), filename.to_string());
     // Also to data
-    if fdata.is_none() {
-        vdata
-            .borrow_mut()
-            .insert(PathBuf::from(file_pathcode), Vec::new());
-    } else {
-        vdata
-            .borrow_mut()
-            .insert(PathBuf::from(file_pathcode), fdata.unwrap().to_owned());
-    }
+    vdata.borrow_mut().insert(
+        PathBuf::from(file_pathcode),
+        fdata.unwrap_or(&Vec::new()).to_owned(),
+    );
     return format!("{vexpath}{}", fileid.to_string());
 }
 
@@ -2915,4 +2879,14 @@ fn get_vault_full_string(
         buffer.push_str(&format!("{}:{}\n", path.to_str().unwrap(), u8_to_hex(data)));
     }
     return buffer;
+}
+
+fn get_text_from_cwin(window: &gtk4::ScrolledWindow) -> Option<glib::GString> {
+    let textview: gtk4::TextView =
+        match window.child()?.first_child()?.first_child()?.dynamic_cast() {
+            Ok(t) => t,
+            Err(_) => return None,
+        };
+    let bounds = textview.buffer().bounds();
+    Some(textview.buffer().text(&bounds.0, &bounds.1, true))
 }
