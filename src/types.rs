@@ -8,20 +8,20 @@ use gtk4::prelude::WidgetExt;
 pub const VDATA_INDEX_APPEND: i16 = -32000;
 pub type Cipher = ([u8; 12], Vec<u8>);
 
-pub struct I16Container {
-    value: i16,
+pub struct ItemContainer<T> {
+    value: T,
 }
 
-impl I16Container {
-    pub fn new(value: i16) -> Self {
-        I16Container { value }
+impl<T> ItemContainer<T> {
+    pub fn new(value: T) -> Self {
+        ItemContainer { value }
     }
 
-    pub fn get(&self) -> &i16 {
+    pub fn get(&self) -> &T {
         &self.value
     }
 
-    pub fn set(&mut self, value: i16) {
+    pub fn set(&mut self, value: T) {
         self.value = value;
     }
 }
@@ -170,7 +170,7 @@ impl ImgDecodeItem {
 
 pub struct ImgDecodingController {
     pub queue: BTreeMap<u32, ImgDecodeItem>,
-    pub image_provider: BTreeMap<u32, Rc<gtk4::Image>>,
+    pub image_provider: BTreeMap<u32, Rc<gtk4::Picture>>,
     pub is_processing: bool,
     cindex: u32,
 }
@@ -189,7 +189,7 @@ impl ImgDecodingController {
         &mut self,
         img_type: IDCSImageType,
         img_data: Vec<u8>,
-        iviewer: Rc<gtk4::Image>,
+        iviewer: Rc<gtk4::Picture>,
     ) {
         let curr_index = self.cindex;
         iviewer.add_css_class(&curr_index.to_string());

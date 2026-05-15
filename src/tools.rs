@@ -46,6 +46,24 @@ pub fn hex_to_u8(data: &String) -> Result<Vec<u8>, std::num::ParseIntError> {
     Ok(resvec)
 }
 
+#[inline]
+pub fn grid_builder(
+    mtop: i32,
+    mbottom: i32,
+    mstart: i32,
+    mend: i32,
+    sprow: i32,
+    spcol: i32,
+) -> gtk4::builders::GridBuilder {
+    gtk4::Grid::builder()
+        .margin_top(mtop)
+        .margin_bottom(mbottom)
+        .margin_start(mstart)
+        .margin_end(mend)
+        .row_spacing(sprow)
+        .column_spacing(spcol)
+}
+
 pub fn show_alert(parent: &impl IsA<gtk4::Window>, title: &str, message: &str) {
     let dialog = gtk4::AlertDialog::builder()
         .message(title)
@@ -74,6 +92,30 @@ pub fn get_vault_dir() -> Option<String> {
         return None;
     }
     return Some(opath.unwrap().to_string());
+}
+
+pub fn check_vault_name(
+    awindow: Rc<gtk4::ApplicationWindow>,
+    base_data: &String,
+    vname: Rc<String>,
+) -> Option<i16> {
+    let mut vault_count: i16 = 0;
+    for name in base_data.split(",") {
+        if vault_count == 0 && name != "^BaseAES Vault Format Ver.2^" {
+            show_alert(awindow.as_ref(), "Error", "The vault index is corrupted.");
+            return None;
+        } else if name == vname.as_ref() {
+            show_alert(
+                awindow.as_ref(),
+                "Alert",
+                "The vault name cannot be the same.",
+            );
+            return None;
+        }
+        vault_count += 1;
+    }
+    vault_count -= 1;
+    Some(vault_count)
 }
 
 #[inline]
@@ -244,6 +286,88 @@ fn split_vault_path(path: &str) -> Vec<String> {
     res
 }
 
+#[inline]
+pub fn bgsf_parse_item(
+    iviewer_grid: Rc<gtk4::Grid>,
+    warn_label: Rc<gtk4::Label>,
+    style: [i32; 4],
+    path_str: &str,
+    lcount: &u32,
+    idcs_rc: Rc<RefCell<ImgDecodingController>>,
+    vindex_rc: Rc<RefCell<BTreeMap<PathBuf, String>>>,
+    vdata_rc: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
+) -> bool {
+    if let Some(dpath) = decode_path(Rc::clone(&vindex_rc), path_str) {
+        let bdata_rc = vdata_rc.borrow();
+        let pdata = match bdata_rc.get(&dpath) {
+            Some(d) => d,
+            None => {
+                warn_label.set_text(&format!(
+                    "{}\nWarning: The file doesn't exist at line {lcount}  ({path_str})",
+                    warn_label.text()
+                ));
+                return true;
+            }
+        };
+        // Predict filetype, again
+        let lmime = tree_magic_mini::from_u8(pdata);
+
+        if lmime.starts_with("text") {
+            let text_viewer = gtk4::TextView::builder()
+                .hexpand(true)
+                .vexpand(true)
+                .editable(false)
+                .build();
+            text_viewer.add_css_class("normal");
+            text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
+            text_viewer
+                .buffer()
+                .set_text(str::from_utf8(pdata).unwrap_or(
+                    "Failed to read data as text. Data is saved but we're not able to show it.",
+                ));
+            iviewer_grid.attach(&text_viewer, style[0], style[1] + 1, style[2], style[3]);
+        } else if lmime == "image/png" || lmime == "image/jpeg" || lmime == "image/webp" {
+            // Image parsing
+            let image_viewer =
+                Rc::new(gtk4::Picture::builder().hexpand(true).vexpand(true).build());
+
+            idcs_rc.borrow_mut().request_decode(
+                IDCSImageType::from_str_name(lmime).unwrap(),
+                pdata.to_owned(),
+                Rc::clone(&image_viewer),
+            );
+            iviewer_grid.attach(
+                image_viewer.as_ref(),
+                style[0],
+                style[1] + 1,
+                style[2],
+                style[3],
+            );
+        } else if lmime.starts_with("image") {
+            let text_viewer = gtk4::TextView::builder()
+                .hexpand(true)
+                .vexpand(true)
+                .editable(false)
+                .build();
+            text_viewer.add_css_class("normal");
+            text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
+            text_viewer
+                .buffer()
+                .set_text("Sorry, only PNG/JPEG/WebP Images are supported.");
+            iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
+        } else {
+            let phlabel = gtk4::Label::new(Some(&format!("Decoded: {:?}", dpath)));
+            iviewer_grid.attach(&phlabel, style[0], style[1] + 1, style[2], style[3]);
+        }
+    } else {
+        warn_label.set_text(&format!(
+            "{}\nWarning: Invalid path at line {lcount}  ({path_str})",
+            warn_label.text()
+        ));
+    }
+    false
+}
+
 pub fn generate_new_vault(
     master_plain_vname: String,
     vname: &String,
@@ -261,21 +385,21 @@ pub fn generate_new_vault(
     return Some((master_plain_vname + &format!(",{vname}"), newvault));
 }
 
-fn open_master(parent: &impl IsA<gtk4::Window>) -> Option<std::fs::File> {
+fn open_master(parent: Option<&impl IsA<gtk4::Window>>) -> Option<std::fs::File> {
     // Open file
     let ovaultpath = get_vault_path();
-    if ovaultpath.is_none() {
+    if ovaultpath.is_none() && parent.is_some() {
         show_alert(
-            parent,
+            parent.unwrap(),
             "Error",
             "Failed to detect the path to 'master.vbase'.",
         );
         return None;
     }
     let rbase_file = std::fs::File::open(&ovaultpath.unwrap());
-    if rbase_file.is_err() {
+    if rbase_file.is_err() && parent.is_some() {
         show_alert(
-            parent,
+            parent.unwrap(),
             "Error",
             "Could not open 'master.vbase' in read_master.",
         );
@@ -367,7 +491,7 @@ pub fn encrypt_aes_with_key(
 
 #[inline]
 pub fn decrypt_aes(
-    parent: &impl IsA<gtk4::Window>,
+    parent: Option<&impl IsA<gtk4::Window>>,
     ciphertext: &Vec<u8>,
     nonce_buf: [u8; 12],
     show_error: bool,
@@ -376,7 +500,7 @@ pub fn decrypt_aes(
 }
 
 pub fn decrypt_aes_with_key(
-    parent: &impl IsA<gtk4::Window>,
+    parent: Option<&impl IsA<gtk4::Window>>,
     ciphertext: &[u8],
     nonce_buf: [u8; 12],
     key: &[u8; 32],
@@ -387,8 +511,8 @@ pub fn decrypt_aes_with_key(
     let nonce = Nonce::from_slice(&nonce_buf);
     let rbase_data = cipher.decrypt(nonce, ciphertext);
     if rbase_data.is_err() {
-        if show_error == true {
-            show_alert(parent, "Error", "Error: Failed to decrypt provided data.");
+        if show_error == true && parent.is_some() {
+            show_alert(parent.unwrap(), "Error", "Failed to decrypt provided data.");
         }
         return None;
     }
@@ -396,7 +520,7 @@ pub fn decrypt_aes_with_key(
 }
 
 pub fn master_read_vname(parent: &impl IsA<gtk4::Window>) -> Option<([u8; 17], Vec<u8>)> {
-    let mut base_file = match open_master(parent) {
+    let mut base_file = match open_master(Some(parent)) {
         Some(f) => f,
         None => {
             return None;
@@ -430,19 +554,26 @@ pub fn master_read_vname(parent: &impl IsA<gtk4::Window>) -> Option<([u8; 17], V
     return Some((vname_ibuf, vname_cipherbuf));
 }
 
-pub fn master_read_vault_at(parent: &impl IsA<gtk4::Window>, index: usize) -> Option<Cipher> {
+pub fn master_read_vault_at(
+    parent: Option<&impl IsA<gtk4::Window>>,
+    index: usize,
+) -> Option<Cipher> {
     let mut base_file = match open_master(parent) {
         Some(f) => f,
         None => {
             return None;
         }
     };
+    let show_error = parent.is_some();
     if let Err(_) = base_file.lock() {
-        show_alert(
-            parent,
-            "Error",
-            "Failed to acquire a lock to 'master.vbase'.\nAborting due to unreliable read.",
-        );
+        if show_error {
+            show_alert(
+                parent.unwrap(),
+                "Error",
+                "Failed to acquire a lock to 'master.vbase'.\nAborting due to unreliable read.",
+            );
+        }
+        return None;
     }
 
     // Read vname section and skip
@@ -450,17 +581,21 @@ pub fn master_read_vault_at(parent: &impl IsA<gtk4::Window>, index: usize) -> Op
     let vname_length = match base_file.read_exact(&mut vname_ibuf) {
         Ok(_) => u32::from_le_bytes(vname_ibuf[13..17].try_into().unwrap()),
         Err(_) => {
-            show_alert(
-                parent,
-                "Error",
-                "Failed to read 'vname-info' from 'master.vbase'.",
-            );
+            if show_error {
+                show_alert(
+                    parent.unwrap(),
+                    "Error",
+                    "Failed to read 'vname-info' from 'master.vbase'.",
+                );
+            }
             return None;
         }
     };
 
     if let Err(_) = base_file.seek_relative(vname_length as i64) {
-        show_alert(parent, "Error", "Failed to skip 'vname-cipher'.");
+        if show_error {
+            show_alert(parent.unwrap(), "Error", "Failed to skip 'vname-cipher'.");
+        }
         return None;
     };
 
@@ -471,21 +606,25 @@ pub fn master_read_vault_at(parent: &impl IsA<gtk4::Window>, index: usize) -> Op
             let vdata_slength = match base_file.read_exact(&mut vdata_ibuf) {
                 Ok(_) => u32::from_le_bytes(vdata_ibuf[12..16].try_into().unwrap()),
                 Err(_) => {
-                    show_alert(
-                        parent,
-                        "Error",
-                        "Failed to read 'vdata-length(skip)' from 'master.vbase'.",
-                    );
+                    if show_error {
+                        show_alert(
+                            parent.unwrap(),
+                            "Error",
+                            "Failed to read 'vdata-length(skip)' from 'master.vbase'.",
+                        );
+                    }
                     return None;
                 }
             };
 
             if let Err(_) = base_file.seek_relative(vdata_slength as i64) {
-                show_alert(
-                    parent,
-                    "Error",
-                    "Failed to skip 'vdata' that is prior to the index.",
-                );
+                if show_error {
+                    show_alert(
+                        parent.unwrap(),
+                        "Error",
+                        "Failed to skip 'vdata' that is prior to the index.",
+                    );
+                }
                 return None;
             };
         }
@@ -494,33 +633,39 @@ pub fn master_read_vault_at(parent: &impl IsA<gtk4::Window>, index: usize) -> Op
     // Read the vault at (index)
     let mut vdata_noncebuf = [0u8; 12];
     if let Err(_) = base_file.read_exact(&mut vdata_noncebuf) {
-        show_alert(
-            parent,
-            "Error",
-            "Failed to read 'vdata-nonce' from 'master.vbase'.",
-        );
+        if show_error {
+            show_alert(
+                parent.unwrap(),
+                "Error",
+                "Failed to read 'vdata-nonce' from 'master.vbase'.",
+            );
+        }
         return None;
     };
     let mut vdata_lengthbuf = [0u8; 4];
     let vdata_length = match base_file.read_exact(&mut vdata_lengthbuf) {
         Ok(_) => u32::from_le_bytes(vdata_lengthbuf),
         Err(_) => {
-            show_alert(
-                parent,
-                "Error",
-                "Failed to read 'vdata-length' from 'master.vbase'.",
-            );
+            if show_error {
+                show_alert(
+                    parent.unwrap(),
+                    "Error",
+                    "Failed to read 'vdata-length' from 'master.vbase'.",
+                );
+            }
             return None;
         }
     };
 
     let mut vdata_cipherbuf = vec![0u8; vdata_length as usize];
     if let Err(_) = base_file.read_exact(&mut vdata_cipherbuf) {
-        show_alert(
-            parent,
-            "Error",
-            "Failed to read 'vdata-cipher' from 'master.vbase'.",
-        );
+        if show_error {
+            show_alert(
+                parent.unwrap(),
+                "Error",
+                "Failed to read 'vdata-cipher' from 'master.vbase'.",
+            );
+        }
         return None;
     };
 
@@ -561,7 +706,7 @@ pub fn master_update_data(
     let mut bfile_bufwriter = BufWriter::new(base_file);
 
     // Get current and lock
-    let mut current_file = match open_master(parent) {
+    let mut current_file = match open_master(Some(parent)) {
         Some(f) => f,
         None => return false,
     };
@@ -922,7 +1067,7 @@ pub fn delete_button_vault_list(
     vname_plain_str: String,
     capp: Rc<gtk4::Application>,
     commlabel: Rc<RefCell<gtk4::Label>>,
-    commindex: Rc<RefCell<I16Container>>,
+    commindex: Rc<RefCell<ItemContainer<i16>>>,
 ) -> Vec<gtk4::Button> {
     let vname_plain = Rc::new(vname_plain_str);
     let mut buttons: Vec<gtk4::Button> = Vec::new();
@@ -940,14 +1085,14 @@ pub fn delete_button_vault_list(
         let commindex_rc = Rc::clone(&commindex);
         let commlabel_rc = Rc::clone(&commlabel);
         vlist_button.connect_clicked(move |_| {
-            let vault_data =
-                match master_read_vault_at(pwindow_rc.as_ref(), vault_index_at as usize) {
+            let masted_vdata =
+                match master_read_vault_at(Some(pwindow_rc.as_ref()), vault_index_at as usize) {
                     Some(v) => v,
                     None => return,
                 };
             if vtype == b"d" {
                 if let Some(mast_decoded_vname) =
-                    decrypt_aes(pwindow_rc.as_ref(), &vault_data.1, vault_data.0, false)
+                    decrypt_aes(Some(pwindow_rc.as_ref()), &masted_vdata.1, masted_vdata.0, false)
                 {
                     // Ask vault password
                     let pw_window = Rc::new(
@@ -959,14 +1104,7 @@ pub fn delete_button_vault_list(
                     pw_window.set_size_request(128, 80);
                     pw_window.set_application(Some(ccapp.as_ref()));
 
-                    let vdel_grid = gtk4::Grid::builder()
-                        .margin_top(6)
-                        .margin_bottom(6)
-                        .margin_start(12)
-                        .margin_end(12)
-                        .row_spacing(24)
-                        .column_spacing(12)
-                        .build();
+                    let vdel_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                     // Password label
                     let pw_pass_label = gtk4::Label::new(Some("Enter Vault password to confirm:"));
@@ -990,7 +1128,7 @@ pub fn delete_button_vault_list(
                         let mast_decoded_nonce: [u8; 12] = mast_decoded_noncer.try_into().unwrap();
 
                         match decrypt_aes_with_key(
-                            pw_window_rc.as_ref(),
+                            Some(pw_window_rc.as_ref()),
                             mast_decoded_vname,
                             mast_decoded_nonce,
                             vault_password.as_ref(),
@@ -1037,14 +1175,7 @@ pub fn delete_button_vault_list(
                 mpw_window.set_size_request(216, 84);
                 mpw_window.set_resizable(false);
 
-                let mpw_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(6)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(24)
-                    .column_spacing(12)
-                    .build();
+                let mpw_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                 // Ask label
                 let mpw_label = gtk4::Label::new(Some("Enter password to open master vault."));
@@ -1064,13 +1195,14 @@ pub fn delete_button_vault_list(
                 let vname_plain_urc = Rc::clone(&vname_plain_rc);
                 mpw_ok_button.connect_clicked(move |_| {
                     let master_password = Rc::new(hashify_sha256(mpw_passbox.text().to_string()));
-                    if let Some(mast_decoded_vname) = decrypt_aes_with_key(
-                        mpw_window_rc.as_ref(),
-                        &vault_data.1,
-                        vault_data.0,
+                    if let Some(demast_vault) = decrypt_aes_with_key(
+                        Some(mpw_window_rc.as_ref()),
+                        &masted_vdata.1,
+                        masted_vdata.0,
                         master_password.as_ref(),
                         false,
                     ) {
+                        mpw_window_rc.close();
                         // Ask vault password
                         let pw_window = Rc::new(
                             gtk4::Window::builder()
@@ -1081,14 +1213,7 @@ pub fn delete_button_vault_list(
                         pw_window.set_size_request(128, 80);
                         pw_window.set_application(Some(cccapp.as_ref()));
 
-                        let vdel_grid = gtk4::Grid::builder()
-                            .margin_top(6)
-                            .margin_bottom(6)
-                            .margin_start(12)
-                            .margin_end(12)
-                            .row_spacing(24)
-                            .column_spacing(12)
-                            .build();
+                        let vdel_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                         // Password label
                         let pw_pass_label = gtk4::Label::new(Some("Enter Vault password to confirm:"));
@@ -1109,13 +1234,13 @@ pub fn delete_button_vault_list(
                             // Decode
                             let vault_password =
                                 Rc::new(hashify_sha256(vdel_pass_box.text().to_string()));
-                            let (mast_decoded_noncer, mast_decoded_vname) = mast_decoded_vname.split_at(12);
-                            let mast_decoded_nonce: [u8; 12] = mast_decoded_noncer.try_into().unwrap();
+                            let (demast_vault_nonces, demast_vault_data) = demast_vault.split_at(12);
+                            let demast_vault_nonce: [u8; 12] = demast_vault_nonces.try_into().unwrap();
 
                             match decrypt_aes_with_key(
-                                pw_window_rc.as_ref(),
-                                mast_decoded_vname,
-                                mast_decoded_nonce,
+                                Some(pw_window_rc.as_ref()),
+                                demast_vault_data,
+                                demast_vault_nonce,
                                 vault_password.as_ref(),
                                 false,
                             ) {
@@ -1127,7 +1252,7 @@ pub fn delete_button_vault_list(
                                     commindex_crc.borrow_mut().set(vault_index_at);
                                     commlabel_crc
                                         .borrow_mut()
-                                        .add_css_class(&format!("del_{}_{}", vname_crc.as_ref(), u8_to_hex(&mast_decoded_nonce[0..8])));
+                                        .add_css_class(&format!("del_{}_{}", vname_crc.as_ref(), u8_to_hex(&demast_vault_nonce[0..8])));
                                     pw_window_rc.close();
                                 }
                                 None => {
@@ -1153,9 +1278,10 @@ pub fn delete_button_vault_list(
                     };
                 });
 
-                mpw_grid.attach(&mpw_ok_button, 2, 2, 1, 1);
+                mpw_grid.attach(&mpw_ok_button, 3, 2, 1, 1);
 
                 mpw_window.set_child(Some(&mpw_grid));
+                mpw_window.set_modal(true);
                 mpw_window.present();
             } else {
                 show_alert(
@@ -1186,15 +1312,11 @@ pub fn baseaes_setup(
             .modal(true)
             .build(),
     );
-    setup_window.set_size_request(400, 480);
+    setup_window.set_size_request(460, 520);
 
-    let setup_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(8)
-        .column_spacing(8)
+    let setup_grid = grid_builder(6, 6, 12, 12, 8, 8)
+        .hexpand(true)
+        .vexpand(true)
         .build();
 
     let setup_title = gtk4::Label::new(Some("Welcome to BaseAES!"));
@@ -1210,7 +1332,7 @@ pub fn baseaes_setup(
     let setup_precautions = gtk4::ScrolledWindow::new();
     setup_precautions.set_hscrollbar_policy(gtk4::PolicyType::Never);
     setup_precautions.add_css_class("notice");
-    setup_precautions.set_size_request(320, 280);
+    setup_precautions.set_size_request(440, 320);
     let setup_precautions_text = gtk4::Label::builder()
         .margin_top(12)
         .margin_bottom(8)
@@ -1224,22 +1346,25 @@ pub fn baseaes_setup(
     setup_precautions.set_child(Some(&setup_precautions_text));
     setup_grid.attach(&setup_precautions, 1, 3, 2, 1);
 
+    let setup_line = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    setup_grid.attach(&setup_line, 1, 4, 2, 1);
+
     // Master file encryption selectors etc.
     let setup_aes_desc = gtk4::Label::new(Some("Select master file encryption:"));
-    setup_grid.attach(&setup_aes_desc, 1, 4, 2, 1);
+    setup_grid.attach(&setup_aes_desc, 1, 5, 2, 1);
 
     let setup_aes_selector1r = gtk4::CheckButton::with_label("Use included key (weaker)");
     let setup_aes_selector2r = gtk4::CheckButton::with_label("Use password (recommended)");
     setup_aes_selector1r.set_group(Some(&setup_aes_selector2r));
 
-    setup_grid.attach(&setup_aes_selector1r, 1, 5, 1, 1);
-    setup_grid.attach(&setup_aes_selector2r, 2, 5, 1, 1);
+    setup_grid.attach(&setup_aes_selector1r, 1, 6, 1, 1);
+    setup_grid.attach(&setup_aes_selector2r, 1, 7, 1, 1);
     let setup_aes_selector1 = Rc::new(setup_aes_selector1r);
     let setup_aes_selector2 = Rc::new(setup_aes_selector2r);
 
     let setup_aes_pwbox = gtk4::PasswordEntry::new();
     setup_aes_pwbox.set_placeholder_text(Some("Enter Master password here..."));
-    setup_grid.attach(&setup_aes_pwbox, 2, 6, 1, 1);
+    setup_grid.attach(&setup_aes_pwbox, 1, 8, 1, 1);
 
     let setup_aes_button = gtk4::Button::with_label("OK");
     let basefile = Rc::new(base_file);
@@ -1249,6 +1374,14 @@ pub fn baseaes_setup(
     setup_aes_button.connect_clicked(move |_| {
         let use_intk = setup_aes_sel1.is_active();
         if !(use_intk || setup_aes_sel2.is_active()) {
+            return;
+        }
+        if setup_aes_sel2.is_active() && setup_aes_pwbox.text().is_empty() {
+            show_alert(
+                swindow_rc.as_ref(),
+                "Alert",
+                "Master password cannot be empty.",
+            );
             return;
         }
         let key = hashify_sha256(setup_aes_pwbox.text().to_string());
@@ -1309,7 +1442,7 @@ pub fn baseaes_setup(
         swindow_rc.add_css_class("init_complete");
         swindow_rc.close();
     });
-    setup_grid.attach(&setup_aes_button, 2, 7, 1, 1);
+    setup_grid.attach(&setup_aes_button, 2, 8, 1, 1);
 
     setup_window.set_child(Some(&setup_grid));
     setup_window.connect_close_request(move |swindow| {
@@ -1336,14 +1469,7 @@ pub fn save_vault(
     save_window.set_title(Some("Save changes?"));
     save_window.set_default_size(180, 48);
     save_window.set_modal(true);
-    let save_grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(6)
-        .column_spacing(6)
-        .build();
+    let save_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
     let save_title = gtk4::Label::new(Some(&format!("Do you want to save changes in '{vname}'?")));
     save_grid.attach(&save_title, 1, 1, 3, 1);
@@ -1416,6 +1542,7 @@ pub fn delete_file_confirm(
     iviewer_rc: Rc<gtk4::ScrolledWindow>,
     vfilelist_rc: Rc<gtk4::ListBox>,
     iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
+    changed_rc: Rc<RefCell<ItemContainer<bool>>>,
     close_vdi: bool,
 ) {
     let mut item_title = iviewer_title_rc.borrow().get_itext().to_owned();
@@ -1426,7 +1553,7 @@ pub fn delete_file_confirm(
     if ofile.is_none() {
         show_alert(
             vdi_window_rc.as_ref(),
-            "Error",
+            "Alert",
             "No file is selected.\nSelect a file you want to delete, and try again.",
         );
         return;
@@ -1439,14 +1566,7 @@ pub fn delete_file_confirm(
     delwindow.set_size_request(240, 96);
     delwindow.set_modal(true);
 
-    let del_grid = gtk4::Grid::builder()
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(6)
-        .column_spacing(12)
-        .build();
+    let del_grid = grid_builder(12, 12, 12, 12, 6, 12).build();
 
     let fileidx = vindex_rc.borrow();
     let ofilename = fileidx.get(fileid.as_ref());
@@ -1486,75 +1606,78 @@ pub fn delete_file_confirm(
     let del_yes_button = gtk4::Button::with_label("Yes");
     del_yes_button.set_size_request(40, 28);
 
-    // Rc suffix: _rcn
-    let app_rcc = Rc::clone(&app_rc);
-    let vindex_rcc = Rc::clone(&vindex_rc);
-    let vdata_rcc = Rc::clone(&vdata_rc);
-    let idcs_rcc = Rc::clone(&idcs_rc);
-    let delwindow_rcc = Rc::clone(&delwindow);
-    let vdi_window_rcc = Rc::clone(&vdi_window_rc);
-    let iviewer_title_rcc = Rc::clone(&iviewer_title_rc);
-    let vexpath_rcc = Rc::clone(&vexpath_rc);
-    let iviewer_rcc = Rc::clone(&iviewer_rc);
-    let vfilelist_rcc = Rc::clone(&vfilelist_rc);
+    // Rc suffix: _yrc
+    let changed_yrc = Rc::clone(&changed_rc);
+    let vindex_yrc = Rc::clone(&vindex_rc);
+    let vdata_yrc = Rc::clone(&vdata_rc);
+    let idcs_yrc = Rc::clone(&idcs_rc);
+    let app_yrc = Rc::clone(&app_rc);
+    let iviewer_title_yrc = Rc::clone(&iviewer_title_rc);
+    let vfilelist_yrc = Rc::clone(&vfilelist_rc);
+    let vdi_window_yrc = Rc::clone(&vdi_window_rc);
+    let delwindow_yrc = Rc::clone(&delwindow);
+    let vexpath_yrc = Rc::clone(&vexpath_rc);
+    let iviewer_yrc = Rc::clone(&iviewer_rc);
     del_yes_button.connect_clicked(move |_| {
-        let ires = vindex_rcc.borrow_mut().remove(Rc::clone(&fileid).as_ref());
-        let dres = vdata_rcc.borrow_mut().remove(Rc::clone(&fileid).as_ref());
+        let ires = vindex_yrc.borrow_mut().remove(Rc::clone(&fileid).as_ref());
+        let dres = vdata_yrc.borrow_mut().remove(Rc::clone(&fileid).as_ref());
         match (ires, dres) {
             (None, None) => {
                 show_alert(
-                    delwindow_rcc.as_ref(),
+                    delwindow_yrc.as_ref(),
                     "Error",
                     "The selected file was not found.",
                 );
             }
             (None, Some(_)) => {
                 show_alert(
-                    delwindow_rcc.as_ref(),
+                    delwindow_yrc.as_ref(),
                     "Error",
                     "The file was not found on index, but deletion was successful.",
                 );
             }
             (Some(_), None) => {
                 show_alert(
-                    delwindow_rcc.as_ref(),
+                    delwindow_yrc.as_ref(),
                     "Error",
                     "The file was found on index, but failed to delete its data.",
                 );
             }
             _ => {}
         };
+        changed_yrc.borrow_mut().set(true);
 
         // Reload
         loop {
-            let dwidget = match vfilelist_rcc.last_child() {
+            let dwidget = match vfilelist_yrc.last_child() {
                 Some(w) => w,
                 None => break,
             };
-            vfilelist_rcc.remove(&dwidget);
+            vfilelist_yrc.remove(&dwidget);
         }
         for button in get_files_from_vpath(
-            Rc::clone(&app_rcc),
-            Rc::clone(&vfilelist_rcc),
-            Rc::clone(&idcs_rcc),
-            Rc::clone(&vindex_rcc),
-            Rc::clone(&vdata_rcc),
-            PathBuf::from(vexpath_rcc.borrow().get_itext()),
-            Rc::clone(&iviewer_title_rcc),
-            Rc::clone(&iviewer_rcc),
-            Rc::clone(&vexpath_rcc),
+            Rc::clone(&app_yrc),
+            Rc::clone(&vfilelist_yrc),
+            Rc::clone(&idcs_yrc),
+            Rc::clone(&vindex_yrc),
+            Rc::clone(&vdata_yrc),
+            PathBuf::from(vexpath_yrc.borrow().get_itext()),
+            Rc::clone(&iviewer_title_yrc),
+            Rc::clone(&iviewer_yrc),
+            Rc::clone(&vexpath_yrc),
         ) {
-            vfilelist_rcc.append(&*button);
+            vfilelist_yrc.append(&*button);
         }
 
-        iviewer_title_rcc
+        iviewer_title_yrc
             .borrow_mut()
             .set_text("Click to open files...");
-        iviewer_rcc.set_child(None::<&gtk4::Grid>);
+        iviewer_title_yrc.borrow_mut().set_itext(String::new());
+        iviewer_yrc.set_child(None::<&gtk4::Grid>);
 
-        delwindow_rcc.close();
+        delwindow_yrc.close();
         if close_vdi {
-            vdi_window_rcc.close();
+            vdi_window_yrc.close();
         }
     });
 
