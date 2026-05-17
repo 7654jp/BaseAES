@@ -18,6 +18,7 @@ use std::io::{BufWriter, Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 use zune_jpeg::zune_core::{bytestream, colorspace, options};
+use zune_png::PngDecoder;
 
 use crate::types::*;
 use crate::vault::get_files_from_vpath;
@@ -142,24 +143,19 @@ pub fn get_pixbuf_from_png_u8(pngraw: &[u8]) -> Option<gtk4::gdk_pixbuf::Pixbuf>
 }
 
 pub fn get_rpixbuf_from_png_u8(pngraw: Vec<u8>) -> Option<RawPixbuf> {
-    let png_decoder = png::Decoder::new(Cursor::new(pngraw));
-    let mut png_reader = match png_decoder.read_info() {
-        Ok(reader) => reader,
-        Err(_) => return None,
+    let mut png_decoder = PngDecoder::new(Cursor::new(pngraw));
+    png_decoder.decode_headers().ok()?;
+    let png_header = match png_decoder.info() {
+        Some(header) => header.to_owned(),
+        None => return None,
     };
-    let mut png_rawbuf = vec![0u8; png_reader.output_buffer_size()?];
-    let frame_info = match png_reader.next_frame(&mut png_rawbuf) {
-        Ok(finfo) => finfo,
-        Err(_) => return None,
-    };
-    let (img_h, img_w) = (frame_info.height as i32, frame_info.width as i32);
-    if frame_info.color_type == png::ColorType::Rgb {
-        return Some(RawPixbuf::new(png_rawbuf, false, img_w, img_h));
-    } else if frame_info.color_type == png::ColorType::Rgba {
-        return Some(RawPixbuf::new(png_rawbuf, true, img_w, img_h));
-    } else {
-        return None;
-    };
+    let png_rawbuf = png_decoder.decode_raw().ok()?;
+    let (img_h, img_w) = (png_header.height as i32, png_header.width as i32);
+    match png_decoder.colorspace()? {
+        colorspace::ColorSpace::RGB => Some(RawPixbuf::new(png_rawbuf, false, img_w, img_h)),
+        colorspace::ColorSpace::RGBA => Some(RawPixbuf::new(png_rawbuf, true, img_w, img_h)),
+        _ => None,
+    }
 }
 
 pub fn get_rpixbuf_from_jpeg_u8(jpgraw: Vec<u8>) -> Option<RawPixbuf> {
