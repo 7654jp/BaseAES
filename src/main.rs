@@ -37,6 +37,53 @@ fn open_main(application: &gtk4::Application) {
     window.set_default_size(400, 180);
     window.set_resizable(false);
 
+    // Header bar
+    let header_bar = gtk4::HeaderBar::new();
+
+    // App info button
+    let info_button = gtk4::Button::new();
+    info_button.set_size_request(28, 28);
+    info_button.set_icon_name("dialog-information-symbolic");
+
+    info_button.connect_clicked(clone!(
+        #[weak]
+        application,
+        move |_| {
+            let info_window = gtk4::AboutDialog::new();
+            info_window.set_application(Some(&application));
+            info_window.set_title(Some("About BaseAES"));
+            info_window.set_size_request(160, 400);
+            info_window.set_resizable(false);
+
+            let info_titlebar = gtk4::HeaderBar::new();
+            info_window.set_titlebar(Some(&info_titlebar));
+
+            let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
+
+            let info_title = gtk4::Label::new(None);
+            info_title.set_markup("<b>BaseAES 0.4.0 (Preview version)</b>");
+            info_title.add_css_class("big");
+            info_grid.attach(&info_title, 1, 1, 1, 1);
+
+            let info_text = gtk4::Label::new(Some(ABOUT_APP_TEXT));
+            info_grid.attach(&info_text, 1, 2, 1, 1);
+
+            let info_gh = gtk4::LinkButton::with_label(
+                "https://github.com/7654jp/BaseAES",
+                "View repository (GitHub)",
+            );
+            info_gh.add_css_class("big");
+            info_grid.attach(&info_gh, 1, 3, 1, 1);
+
+            info_window.set_child(Some(&info_grid));
+            info_window.set_modal(true);
+            info_window.present();
+        }
+    ));
+
+    header_bar.pack_end(&info_button);
+    window.set_titlebar(Some(&header_bar));
+
     // Main grid
     let grid = gtk4::Grid::builder()
         .margin_top(6)
@@ -54,14 +101,21 @@ fn open_main(application: &gtk4::Application) {
     grid.attach(&title_label, 1, 1, 3, 1);
 
     // Enable CSS
-    let display = gdk::Display::default().expect("Error: Could not get default display.");
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_data(include_str!("fstyle.css"));
-    gtk4::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    if let Some(display) = gdk::Display::default() {
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(include_str!("fstyle.css"));
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    } else {
+        show_alert(
+            window.as_ref(),
+            "Error",
+            "Failed to get display.\nStylesheet is disabled.",
+        );
+    }
 
     // Add vault button
     let add_button = gtk4::Button::new();
@@ -988,3 +1042,12 @@ fn main() {
     application.connect_activate(open_main);
     application.run();
 }
+
+const ABOUT_APP_TEXT: &str = concat!(
+    "BaseAES is a simple filesystem-like\n",
+    "  vault system with strong encryption.\n\n",
+    "Developed by @7654jp\n\n",
+    "This software is licensed under\n",
+    "  version 3 of the GNU General Public License.\n",
+    "For details, see LICENSE file in the repository."
+);

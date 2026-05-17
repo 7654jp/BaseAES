@@ -1,3 +1,11 @@
+/*
+ *   BaseAES, a simple filesystem-like vault system with strong encryption.
+ *   Copyright (C) 2026  7654jp
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::collections::BTreeMap;

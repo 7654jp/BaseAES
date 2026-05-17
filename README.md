@@ -7,7 +7,7 @@
 > **PLEASE READ PRECAUTIONS BEFORE USING THIS PROGRAM.**
 
 > [!IMPORTANT]
-> This program is a preview version.
+> This program is currently in preview.
 > In release version, you can select where to save the master vault.
 
 *****
@@ -20,7 +20,7 @@ This program was written in Rust, and uses AES-256-GCM for encryption.
 All data is stored in 'master.vbase' at same directory as this executable.  
 If you want to split vaults, copy this application to a different directory.  
 You can set each vault its password, and the vault will be protected with its hash as a key for AES.  
-This vault system **IS vulnable** to process memory dump.
+This vault system **IS vulnable** to process full memory dump.
 
 ### Features
 
