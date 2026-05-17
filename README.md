@@ -35,6 +35,15 @@ Please send a PR or open an issue if you want to improve something.
 
 *****
 
+### Licenses
+
+BaseAES is licensed under GPLv3.  
+
+All crates (libraries) are licensed under the MIT license.  
+You can see every license under [licenses](licences/) folder.
+
+*****
+
 ### PRECAUTIONS
 
 **1. DATA INTEGRITY**  
