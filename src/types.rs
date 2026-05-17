@@ -150,7 +150,6 @@ impl Deref for ButtonWithInternalText {
 pub enum IDCSImageType {
     Png,
     Jpeg,
-    Webp,
 }
 
 impl IDCSImageType {
@@ -158,7 +157,6 @@ impl IDCSImageType {
         match name {
             "image/png" => Some(IDCSImageType::Png),
             "image/jpeg" => Some(IDCSImageType::Jpeg),
-            "image/webp" => Some(IDCSImageType::Webp),
             _ => None,
         }
     }

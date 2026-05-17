@@ -180,33 +180,6 @@ pub fn get_rpixbuf_from_jpeg_u8(jpgraw: Vec<u8>) -> Option<RawPixbuf> {
     ));
 }
 
-pub fn get_rpixbuf_from_webp_u8(webpraw: Vec<u8>) -> Option<RawPixbuf> {
-    let mut webp_decoder = match image_webp::WebPDecoder::new(Cursor::new(webpraw)) {
-        Ok(decoder) => decoder,
-        Err(_) => return None,
-    };
-    let mut webp_rawbuf = vec![0u8; webp_decoder.output_buffer_size()?];
-    if let Err(_) = webp_decoder.read_image(&mut webp_rawbuf) {
-        return None;
-    };
-    let (img_w, img_h) = webp_decoder.dimensions();
-    if webp_decoder.has_alpha() {
-        return Some(RawPixbuf::new(
-            webp_rawbuf,
-            true,
-            img_w as i32,
-            img_h as i32,
-        ));
-    } else {
-        return Some(RawPixbuf::new(
-            webp_rawbuf,
-            false,
-            img_w as i32,
-            img_h as i32,
-        ));
-    }
-}
-
 pub fn itemname_check(name: &String, ftype: &str) -> Result<(), String> {
     if name.contains("^") || name.contains(":") || name.contains("/") || name.contains("'") {
         return Err(format!(
@@ -330,7 +303,7 @@ pub fn bgsf_parse_item(
                     "Failed to read data as text. Data is saved but we're not able to show it.",
                 ));
             iviewer_grid.attach(&text_viewer, style[0], style[1] + 1, style[2], style[3]);
-        } else if lmime == "image/png" || lmime == "image/jpeg" || lmime == "image/webp" {
+        } else if lmime == "image/png" || lmime == "image/jpeg" {
             // Image parsing
             let image_viewer =
                 Rc::new(gtk4::Picture::builder().hexpand(true).vexpand(true).build());
@@ -357,7 +330,7 @@ pub fn bgsf_parse_item(
             text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
             text_viewer
                 .buffer()
-                .set_text("Sorry, only PNG/JPEG/WebP Images are supported.");
+                .set_text("Sorry, only PNG/JPEG Images are supported.");
             iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
         } else {
             let phlabel = gtk4::Label::new(Some(&format!("Decoded: {:?}", dpath)));
