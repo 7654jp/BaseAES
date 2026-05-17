@@ -253,13 +253,6 @@ fn open_vault(
                                 }
                             });
                         }
-                        IDCSImageType::Webp => {
-                            std::thread::spawn(move || {
-                                if let Some(rawpb) = get_rpixbuf_from_webp_u8(img_data) {
-                                    let _ = ssender.send((img_id, rawpb));
-                                }
-                            });
-                        }
                     }
                     idcs_trc.borrow_mut().queue.remove(&img_id);
                 }
@@ -2743,7 +2736,7 @@ fn get_item_viewer_grid(
             }
             lcount += 1;
         }
-    } else if fmime == "image/png" || fmime == "image/jpeg" || fmime == "image/webp" {
+    } else if fmime == "image/png" || fmime == "image/jpeg" {
         // Show as image
         ititle_label.borrow_mut().label.set_text(title);
         let image_viewer = Rc::new(gtk4::Picture::builder().hexpand(true).vexpand(true).build());
@@ -2765,7 +2758,7 @@ fn get_item_viewer_grid(
         text_viewer.add_css_class("normal");
         text_viewer
             .buffer()
-            .set_text("Sorry, only PNG/JPEG/WebP Images are supported.");
+            .set_text("Sorry, only PNG/JPEG Images are supported.");
         iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
     } else if data_utf8.is_ok() {
         // Show as text
