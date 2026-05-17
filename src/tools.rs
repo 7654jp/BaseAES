@@ -1,3 +1,11 @@
+/*
+ *   BaseAES, a simple filesystem-like vault system with strong encryption.
+ *   Copyright (C) 2026  7654jp
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -1341,7 +1349,7 @@ pub fn baseaes_setup(
         .wrap(true)
         .wrap_mode(gtk4::pango::WrapMode::Word)
         .build();
-    setup_precautions_text.set_label(PRECAUTIONS_TXT);
+    setup_precautions_text.set_label(PRECAUTIONS_TEXT);
     setup_precautions_text.add_css_class("notice");
     setup_precautions.set_child(Some(&setup_precautions_text));
     setup_grid.attach(&setup_precautions, 1, 3, 2, 1);
@@ -1689,7 +1697,7 @@ pub fn delete_file_confirm(
 // CBK: Common Base Key
 const BASE_KEY: &[u8; 32] = b"CBK@TmV2ZXJHb25uYUdpdmVZb3VVcA==";
 
-const PRECAUTIONS_TXT: &str = concat!(
+const PRECAUTIONS_TEXT: &str = concat!(
     "1. DATA INTEGRITY\n",
     "THIS DOES NOT GUARANTEE THAT ENCRYPTED DATA HAS NOT BEEN ALTERED. DATA TAMPERING OR CORRUPTION MAY OCCUR.\n\n",
     "2. DATA LEGALITY\n",
