@@ -47,7 +47,9 @@ pub fn ask_vault_password_and_open(
     let vopen_window_rc = Rc::clone(&vopen_window);
     vopen_ok_button.connect_clicked(move |_| {
         // Decode
-        let vault_password = Rc::new(hashify_sha256(vopen_pass_box.text().to_string()));
+        let vault_password = Rc::new(hashify_sha256(
+            vopen_pass_box.text().to_string() + VAULT_SALT,
+        ));
         let vault_raw = decrypt_aes_with_key(
             Some(vopen_window_rc.as_ref()),
             &vault_data.1,
@@ -122,7 +124,9 @@ pub fn ask_vault_password_and_open_async(
             let (nonce_s, data_s) = data.split_at(12);
             let nonce: [u8; 12] = nonce_s.try_into().unwrap();
             // Decode
-            let vault_password = Rc::new(hashify_sha256(vopen_pass_box.text().to_string()));
+            let vault_password = Rc::new(hashify_sha256(
+                vopen_pass_box.text().to_string() + VAULT_SALT,
+            ));
             let vault_raw = decrypt_aes_with_key(
                 Some(vopen_window_rc.as_ref()),
                 data_s,
