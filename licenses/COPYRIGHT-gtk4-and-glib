@@ -14,5 +14,5 @@ LGPL or other licenses. For more information check the license of each GNOME
 library.
 
 ----- The line below is added by 7654jp -----
-'the LICENSE file' on line 1 is renamed to 'LICENSE-MIT-generic'.
+'the LICENSE file' on line 1 is renamed to 'LICENSE-MIT-gtk4-and-glib'.
 ----- The line above is added by 7654jp -----

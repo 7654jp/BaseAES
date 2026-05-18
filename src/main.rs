@@ -61,7 +61,7 @@ fn open_main(application: &gtk4::Application) {
             let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
 
             let info_title = gtk4::Label::new(None);
-            info_title.set_markup("<b>BaseAES 0.4.0 (Preview version)</b>");
+            info_title.set_markup("<b>BaseAES 0.6.0 (Preview version)</b>");
             info_title.add_css_class("big");
             info_grid.attach(&info_title, 1, 1, 1, 1);
 
@@ -238,7 +238,7 @@ fn open_main(application: &gtk4::Application) {
                         let (added_full_vname, diff_vdata) = match generate_new_vault(
                             vname_plain_str,
                             Rc::clone(&vname).as_ref(),
-                            &hashify_sha256(nv_passbox_rc.text().to_string()),
+                            &hashify_sha256(nv_passbox_rc.text().to_string() + VAULT_SALT),
                             aawindow.as_ref(),
                         ) {
                             Some((vname, vdata)) => (vname, vdata),
@@ -394,7 +394,7 @@ fn open_main(application: &gtk4::Application) {
                                 let (added_full_vname, diff_vdata) = match generate_new_vault(
                                     base_data,
                                     Rc::clone(&vname).as_ref(),
-                                    &hashify_sha256(nv_pass_rc.text().to_string()),
+                                    &hashify_sha256(nv_pass_rc.text().to_string() + VAULT_SALT),
                                     aaawindow.as_ref(),
                                 ) {
                                     Some((vname, vdata)) => (vname, vdata),
@@ -1032,9 +1032,6 @@ fn open_main(application: &gtk4::Application) {
 }
 
 fn main() {
-    println!(
-        "\n==========\nTHIS IS A DEBUG VERSION, NOT INTENDED FOR RELEASE.\nREMOVE ALL 'eprintln' BEFORE RELEASE.\nTHIS VERSION STILL CONTAINS BUGS. CONTACT DEVELOPER IF YOU SAW THIS.\n==========\n"
-    );
     let application = gtk4::Application::new(
         Some("local.net.jp7654.baseaes"),
         gtk4::gio::ApplicationFlags::HANDLES_OPEN,

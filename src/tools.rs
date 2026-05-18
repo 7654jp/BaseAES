@@ -1663,6 +1663,8 @@ pub fn delete_file_confirm(
     delwindow.present();
 }
 
+pub const VAULT_SALT: &str = "VES%SGFzaGEyNTY=";
+
 // CBK: Common Base Key
 const BASE_KEY: &[u8; 32] = b"CBK@TmV2ZXJHb25uYUdpdmVZb3VVcA==";
 
