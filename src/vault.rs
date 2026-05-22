@@ -1809,7 +1809,10 @@ fn open_vault(
                     );
                     return;
                 }
-                let file_path = &raw_gfile.unwrap().uri()[7..];
+                let file_path = match urlencoding::decode(&raw_gfile.unwrap().uri()[7..]) {
+                    Ok(s) => s.into_owned(),
+                    Err(_) => return,
+                };
 
                 let mut file = match fs::File::create(&file_path) {
                     Ok(f) => f,
@@ -2773,6 +2776,7 @@ fn get_item_viewer_grid(
             .vexpand(true)
             .build();
         text_viewer.add_css_class("normal");
+        text_viewer.add_css_class("text_viewer");
         text_viewer.buffer().set_text(data_utf8.unwrap());
 
         let ititle_label_rc = Rc::clone(&ititle_label);

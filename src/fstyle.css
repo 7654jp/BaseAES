@@ -11,13 +11,23 @@ label {
 }
 
 label.notice {
-    color: black;
+    color: #000;
 }
 
 scrolledwindow.notice {
-    background-color: #ffeeee;
+    background-color: #fee;
 }
 
 label.warning {
-    color: #ffcc00;
+    color: #fc0;
+}
+
+.text_viewer {
+    /*
+    Source - https://stackoverflow.com/a/14573813
+    Posted by akky, modified by community. See post 'Timeline' for change history
+    Retrieved 2026-05-18, License - CC BY-SA 3.0
+    */
+
+    font-family: sans-serif;
 }

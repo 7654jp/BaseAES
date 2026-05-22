@@ -1,18 +1,12 @@
 <h2 style="text-align: center;">BaseAES</h2>
-<h3 style="text-align: center;">A simple filesystem-like vault system with strong encryption.</h3>
+<span style="text-align: center;">A simple filesystem-like vault system with strong encryption.</span>
 
 *****
 
 > [!CAUTION]
 > **PLEASE READ PRECAUTIONS BEFORE USING THIS PROGRAM.**
 
-> [!IMPORTANT]
-> This program is currently in preview.
-> In release version, you can select where to save the master vault.
-
-*****
-
-### Description  
+### Description
 
 This is an encrypted filesystem manager, made by @7654jp.  
 This program was written in Rust, and uses AES-256-GCM for encryption.  
@@ -20,11 +14,12 @@ This program was written in Rust, and uses AES-256-GCM for encryption.
 All data is stored in 'master.vbase' at same directory as this executable.  
 If you want to split vaults, copy this application to a different directory.  
 You can set each vault its password, and the vault will be protected with its hash as a key for AES.  
-This vault system **IS vulnable** to process full memory dump.
+This vault system **IS vulnable** to a memory dump.
 
 ### Features
 
 - Text editing
+- Can parse JPEG/PNG images
 - Load image in separate thread
 - Support original text/image display format
 
@@ -32,15 +27,6 @@ This vault system **IS vulnable** to process full memory dump.
 
 Contributions are welcome.  
 Please send a PR or open an issue if you want to improve something.
-
-*****
-
-### Licenses
-
-BaseAES is licensed under GPLv3.  
-
-All crates (libraries) are licensed under the MIT license.  
-You can see every license under [licenses](licences/) folder.
 
 *****
 
@@ -69,3 +55,12 @@ LOSING AN ENCRYPTION KEY WILL MAKE YOUR ENCRYPTED DATA INACCESSIBLE. SINCE IT CA
 **6. USER AGREEMENT**  
 
 USERS MUST ACKNOWLEDGE AND ACCEPT THE RISKS ASSOCIATED WITH USING THIS PROGRAM IN ADVANCE.
+
+*****
+
+### Licenses
+
+BaseAES is licensed under GPLv3.  
+
+All crates (libraries) are licensed under the MIT license.  
+You can see every license under [licenses](licences/) folder.

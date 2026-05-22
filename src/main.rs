@@ -61,7 +61,7 @@ fn open_main(application: &gtk4::Application) {
             let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
 
             let info_title = gtk4::Label::new(None);
-            info_title.set_markup("<b>BaseAES 0.6.0 (Preview version)</b>");
+            info_title.set_markup("<b>BaseAES 1.0.0 (Release version)</b>");
             info_title.add_css_class("big");
             info_grid.attach(&info_title, 1, 1, 1, 1);
 
@@ -85,20 +85,13 @@ fn open_main(application: &gtk4::Application) {
     window.set_titlebar(Some(&header_bar));
 
     // Main grid
-    let grid = gtk4::Grid::builder()
-        .margin_top(6)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .row_spacing(24)
-        .column_spacing(12)
-        .build();
+    let grid = grid_builder(6, 8, 12, 12, 12, 12).build();
 
     // title label
     let title_label = gtk4::Label::new(None);
     title_label.set_markup("<b>BaseAES Vault Manager</b>");
     title_label.add_css_class("big");
-    grid.attach(&title_label, 1, 1, 3, 1);
+    grid.attach(&title_label, 1, 1, 6, 1);
 
     // Enable CSS
     if let Some(display) = gdk::Display::default() {
@@ -117,6 +110,51 @@ fn open_main(application: &gtk4::Application) {
         );
     }
 
+    // Master vault location viewer
+    let master_location_desc = gtk4::Label::new(Some("Master:"));
+    grid.attach(&master_location_desc, 1, 3, 1, 1);
+    let master_location_label = Rc::new(
+        gtk4::Entry::builder()
+            .text(get_vault_path().unwrap_or(String::from("(Failed to retrieve the default path)")))
+            .editable(false)
+            .build(),
+    );
+    grid.attach(master_location_label.as_ref(), 2, 3, 3, 1);
+
+    // Master vault location changer
+    let master_location_button = gtk4::Button::with_label("Change");
+
+    let window_lrc = Rc::clone(&window);
+    let mastlabel_lrc = Rc::clone(&master_location_label);
+    master_location_button.connect_clicked(move |_| {
+        let mastersel_dialog = gtk4::FileDialog::builder()
+            .modal(true)
+            .title("Select the master vault...")
+            .build();
+
+        let window_src = Rc::clone(&window_lrc);
+        let mastlabel_src = Rc::clone(&mastlabel_lrc);
+        mastersel_dialog.open(
+            Some(window_lrc.as_ref()),
+            gtk4::gio::Cancellable::NONE,
+            move |raw_gfile| {
+                if raw_gfile.is_err() {
+                    return;
+                }
+                // Get path
+                let filepath = match urlencoding::decode(&raw_gfile.unwrap().uri()[7..]) {
+                    Ok(s) => s.into_owned(),
+                    Err(_) => return,
+                };
+                if master_read_vname(window_src.as_ref(), &filepath).is_none() {
+                    return;
+                }
+                mastlabel_src.set_text(&filepath);
+            },
+        );
+    });
+    grid.attach(&master_location_button, 5, 3, 2, 1);
+
     // Add vault button
     let add_button = gtk4::Button::new();
     add_button.set_size_request(120, 96);
@@ -131,6 +169,7 @@ fn open_main(application: &gtk4::Application) {
     add_button.set_child(Some(&abbox));
     // Inline function
     let awindow = Rc::clone(&window);
+    let mastlabel_arc = Rc::clone(&master_location_label);
     add_button.connect_clicked(clone!(
         #[weak]
         application,
@@ -139,14 +178,7 @@ fn open_main(application: &gtk4::Application) {
             let nv_window = gtk4::Window::new();
             nv_window.set_application(Some(&application));
             nv_window.set_title(Some("Add new vault..."));
-            let nv_grid = gtk4::Grid::builder()
-                .margin_top(8)
-                .margin_bottom(8)
-                .margin_start(8)
-                .margin_end(8)
-                .row_spacing(8)
-                .column_spacing(8)
-                .build();
+            let nv_grid = grid_builder(8, 8, 8, 8, 8, 8).build();
 
             // Name label
             let nv_name_label = gtk4::Label::new(Some("Vault Name:"));
@@ -166,6 +198,7 @@ fn open_main(application: &gtk4::Application) {
             let nv_ok_button = gtk4::Button::with_label("OK");
             let aawindow = Rc::clone(&awindow);
             let nv_passbox_rc = Rc::new(nv_pass_box);
+            let mastlabel_oarc = Rc::clone(&mastlabel_arc);
             nv_ok_button.connect_clicked(clone!(
                 #[weak]
                 application,
@@ -184,7 +217,8 @@ fn open_main(application: &gtk4::Application) {
                     }
                     nv_window.close();
                     // Get master data
-                    let mvname = match master_read_vname(&nv_window) {
+                    let mvname = match master_read_vname(&nv_window, mastlabel_oarc.text().as_str())
+                    {
                         Some(d) => d,
                         None => return,
                     };
@@ -278,12 +312,14 @@ fn open_main(application: &gtk4::Application) {
 
                         master_update_data(
                             aawindow.as_ref(),
+                            mastlabel_oarc.text().as_str(),
                             Some((b"d", new_vname_cipher)),
                             Some((VDATA_INDEX_APPEND, Some(&master_diff_vdata))),
                         );
 
                         // Save after user edited data inside vault
                         let aaawindow = Rc::clone(&aawindow);
+                        let mastlabel_oarc2 = Rc::clone(&mastlabel_oarc);
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
@@ -293,6 +329,7 @@ fn open_main(application: &gtk4::Application) {
                                 ) {
                                     master_update_data(
                                         aaawindow.as_ref(),
+                                        mastlabel_oarc2.text().as_str(),
                                         None,
                                         Some((vault_count, Some(&edited_vdata))),
                                     );
@@ -319,14 +356,7 @@ fn open_main(application: &gtk4::Application) {
                         pw_window.set_resizable(false);
 
                         // Ask password grid
-                        let pw_grid = gtk4::Grid::builder()
-                            .margin_top(6)
-                            .margin_bottom(6)
-                            .margin_start(12)
-                            .margin_end(12)
-                            .row_spacing(8)
-                            .column_spacing(8)
-                            .build();
+                        let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
 
                         // Ask label
                         let pw_label =
@@ -342,6 +372,7 @@ fn open_main(application: &gtk4::Application) {
                         let vcommindex = Rc::clone(&vcomm_index);
                         let vcommlabel = Rc::clone(&vcomm_label);
                         let nv_pass_rc = Rc::clone(&nv_passbox_rc);
+                        let mastlabel_oaprc = Rc::clone(&mastlabel_oarc);
                         pw_ok_button.connect_clicked(clone!(
                             #[weak]
                             pw_window,
@@ -437,6 +468,7 @@ fn open_main(application: &gtk4::Application) {
 
                                 master_update_data(
                                     aaawindow.as_ref(),
+                                    mastlabel_oaprc.text().as_str(),
                                     Some((b"u", new_vname_cipher)),
                                     Some((VDATA_INDEX_APPEND, Some(&master_diff_vdata))),
                                 );
@@ -444,6 +476,7 @@ fn open_main(application: &gtk4::Application) {
                                 // Save after user edited data inside vault
                                 let userkey_rc = Rc::clone(&user_key);
                                 let aaaawindow = Rc::clone(&aaawindow);
+                                let mastlabel_oaprc2 = Rc::clone(&mastlabel_oaprc);
                                 vcommlabel
                                     .borrow_mut()
                                     .connect_css_classes_notify(move |label| {
@@ -454,6 +487,7 @@ fn open_main(application: &gtk4::Application) {
                                         ) {
                                             master_update_data(
                                                 aaaawindow.as_ref(),
+                                                mastlabel_oaprc2.text().as_str(),
                                                 None,
                                                 Some((vault_count, Some(&encrypted_master))),
                                             );
@@ -490,7 +524,7 @@ fn open_main(application: &gtk4::Application) {
             nv_window.present();
         }
     ));
-    grid.attach(&add_button, 1, 2, 1, 1);
+    grid.attach(&add_button, 1, 2, 2, 1);
 
     // Open vault button
     let open_button = gtk4::Button::new();
@@ -507,6 +541,7 @@ fn open_main(application: &gtk4::Application) {
     open_button.set_child(Some(&obbox));
     // Inline function
     let owindow = Rc::clone(&window);
+    let mastlabel_orc = Rc::clone(&master_location_label);
     open_button.connect_clicked(clone!(
         #[weak]
         application,
@@ -538,10 +573,11 @@ fn open_main(application: &gtk4::Application) {
 
             selwindow.set_child(Some(&selvbox));
 
-            let (vname_info, vname_cipher) = match master_read_vname(selwindow.as_ref()) {
-                Some(vndata) => vndata,
-                None => return,
-            };
+            let (vname_info, vname_cipher) =
+                match master_read_vname(selwindow.as_ref(), mastlabel_orc.text().as_str()) {
+                    Some(vndata) => vndata,
+                    None => return,
+                };
             let vcomm_label = Rc::new(RefCell::new(gtk4::Label::new(None)));
             let vcomm_index: Rc<RefCell<ItemContainer<i16>>> =
                 Rc::new(RefCell::new(ItemContainer::new(-1)));
@@ -568,6 +604,7 @@ fn open_main(application: &gtk4::Application) {
                 // Save after user edited data inside vault
                 let oowindow = Rc::clone(&owindow);
                 let vcindex_drc = Rc::clone(&vcomm_index);
+                let mastlabel_orc2 = Rc::clone(&mastlabel_orc);
                 vcomm_label
                     .borrow_mut()
                     .connect_css_classes_notify(move |label| {
@@ -577,6 +614,7 @@ fn open_main(application: &gtk4::Application) {
                         ) {
                             master_update_data(
                                 oowindow.as_ref(),
+                                mastlabel_orc2.text().as_str(),
                                 None,
                                 Some((*vcindex_drc.borrow().get(), Some(&encrypted_master))),
                             );
@@ -598,14 +636,19 @@ fn open_main(application: &gtk4::Application) {
                     let oapplrc = Rc::clone(&oapprc);
                     let vcount_at = vault_count.clone();
                     let selwindow_rc = Rc::clone(&selwindow);
-                    let vcommlabel = Rc::clone(&vcomm_label);
                     let vcommindex = Rc::clone(&vcomm_index);
+                    let vcommlabel = Rc::clone(&vcomm_label);
+                    let mastlabel_olrc = Rc::clone(&mastlabel_orc);
                     vlist_button.connect_clicked(move |_| {
                         vcommindex.borrow_mut().set(vcount_at);
+                        let mastpath = mastlabel_olrc.text().as_str().to_owned();
                         let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
                         std::thread::spawn(move || {
-                            let vault_opt =
-                                master_read_vault_at(None::<&gtk4::Window>, vcount_at as usize);
+                            let vault_opt = master_read_vault_at(
+                                None::<&gtk4::Window>,
+                                &mastpath,
+                                vcount_at as usize,
+                            );
                             if vault_opt.is_none() {
                                 return;
                             }
@@ -640,14 +683,7 @@ fn open_main(application: &gtk4::Application) {
                 pw_window.set_resizable(false);
 
                 // Ask password grid
-                let pw_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(6)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(8)
-                    .column_spacing(8)
-                    .build();
+                let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
 
                 // Ask label
                 let pw_label = gtk4::Label::new(Some("Enter password to open master vault."));
@@ -661,6 +697,7 @@ fn open_main(application: &gtk4::Application) {
 
                 let oowindow = Rc::clone(&owindow);
                 let selwindow_rc = Rc::clone(&selwindow);
+                let mastlabel_oprc = Rc::clone(&mastlabel_orc);
                 pw_ok_button.connect_clicked(clone!(
                     #[weak]
                     pw_window,
@@ -688,6 +725,7 @@ fn open_main(application: &gtk4::Application) {
                         let ooowindow = Rc::clone(&oowindow);
                         let mkey_rc = Rc::clone(&mast_key);
                         let vcindex_urc = Rc::clone(&vcomm_index);
+                        let mastlabel_oprc2 = Rc::clone(&mastlabel_oprc);
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
@@ -698,6 +736,7 @@ fn open_main(application: &gtk4::Application) {
                                 ) {
                                     master_update_data(
                                         ooowindow.as_ref(),
+                                        mastlabel_oprc2.text().as_str(),
                                         None,
                                         Some((
                                             *vcindex_urc.borrow().get(),
@@ -725,13 +764,16 @@ fn open_main(application: &gtk4::Application) {
                             let selwindow_rc = Rc::clone(&selwindow);
                             let vcommindex = Rc::clone(&vcomm_index);
                             let vcommlabel = Rc::clone(&vcomm_label);
+                            let mastlabel_oplrc = Rc::clone(&mastlabel_oprc);
                             vlist_button.connect_clicked(move |_| {
                                 vcommindex.borrow_mut().set(vcount_at);
                                 let mkey_raw = mkey_lrc.as_ref().to_owned();
+                                let mastpath = mastlabel_oplrc.text().as_str().to_owned();
                                 let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
                                 std::thread::spawn(move || {
                                     let vault_opt = master_read_vault_at(
                                         None::<&gtk4::Window>,
+                                        &mastpath,
                                         vcount_at as usize,
                                     );
                                     if vault_opt.is_none() {
@@ -774,7 +816,7 @@ fn open_main(application: &gtk4::Application) {
             }
         }
     ));
-    grid.attach(&open_button, 2, 2, 1, 1);
+    grid.attach(&open_button, 3, 2, 2, 1);
 
     // Delete vault button
     let delete_button = gtk4::Button::new();
@@ -791,6 +833,7 @@ fn open_main(application: &gtk4::Application) {
     delete_button.set_child(Some(&dbbox));
     // Inline function
     let dwindow = Rc::clone(&window);
+    let mastlabel_drc = Rc::clone(&master_location_label);
     delete_button.connect_clicked(clone!(
         #[weak]
         application,
@@ -818,10 +861,11 @@ fn open_main(application: &gtk4::Application) {
             selvbox.append(&selscroll);
             selwindow.set_child(Some(&selvbox));
 
-            let (vname_info, vname_cipher) = match master_read_vname(selwindow.as_ref()) {
-                Some((vn_info, vn_cipher)) => (vn_info, vn_cipher),
-                None => return,
-            };
+            let (vname_info, vname_cipher) =
+                match master_read_vname(selwindow.as_ref(), mastlabel_drc.text().as_str()) {
+                    Some((vn_info, vn_cipher)) => (vn_info, vn_cipher),
+                    None => return,
+                };
 
             // Decrypt master
             if &[vname_info[0]] == b"d" {
@@ -852,6 +896,7 @@ fn open_main(application: &gtk4::Application) {
 
                 let vcommindex = Rc::clone(&vcomm_index);
                 let selwindow_rc = Rc::clone(&selwindow);
+                let mastlabel_drc2 = Rc::clone(&mastlabel_drc);
                 vcomm_label
                     .borrow_mut()
                     .connect_css_classes_notify(move |label| {
@@ -865,6 +910,7 @@ fn open_main(application: &gtk4::Application) {
                         let vault_index = *vcommindex.borrow().get();
                         master_update_data(
                             selwindow_rc.as_ref(),
+                            mastlabel_drc2.text().as_str(),
                             Some((b"d", vname_cipher_opt.unwrap())),
                             Some((vault_index, None)),
                         );
@@ -879,6 +925,7 @@ fn open_main(application: &gtk4::Application) {
                 for button in delete_button_vault_list(
                     b"d",
                     Rc::clone(&selwindow),
+                    mastlabel_drc.text().as_str().to_owned(),
                     vname_str_res.unwrap(),
                     Rc::new(application),
                     Rc::clone(&vcomm_label),
@@ -897,14 +944,7 @@ fn open_main(application: &gtk4::Application) {
                 pw_window.set_resizable(false);
 
                 // Ask password grid
-                let pw_grid = gtk4::Grid::builder()
-                    .margin_top(6)
-                    .margin_bottom(6)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .row_spacing(8)
-                    .column_spacing(8)
-                    .build();
+                let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
                 // Ask label
                 let pw_label = gtk4::Label::new(Some("Enter password to open master vault."));
                 pw_grid.attach(&pw_label, 1, 1, 3, 1);
@@ -916,6 +956,7 @@ fn open_main(application: &gtk4::Application) {
                 let ddwindow = Rc::clone(&dwindow);
                 let pwwindow_rc = Rc::clone(&pw_window);
                 let selwindow_rc = Rc::clone(&selwindow);
+                let mastlabel_dprc = Rc::clone(&mastlabel_drc);
                 pw_ok_button.connect_clicked(clone!(
                     #[weak]
                     pw_box,
@@ -958,6 +999,7 @@ fn open_main(application: &gtk4::Application) {
                         let masterpw_rc = Rc::clone(&master_pw);
                         let vcommindex = Rc::clone(&vcomm_index);
                         let selwindow_drc = Rc::clone(&selwindow_rc);
+                        let mastlabel_dprc2 = Rc::clone(&mastlabel_dprc);
                         vcomm_label
                             .borrow_mut()
                             .connect_css_classes_notify(move |label| {
@@ -974,6 +1016,7 @@ fn open_main(application: &gtk4::Application) {
                                 let label_ivalue = *vcommindex.borrow().get();
                                 master_update_data(
                                     selwindow_drc.as_ref(),
+                                    mastlabel_dprc2.text().as_str(),
                                     Some((b"u", vname_cipher_opt.unwrap())),
                                     Some((label_ivalue, None)),
                                 );
@@ -988,6 +1031,7 @@ fn open_main(application: &gtk4::Application) {
                         for button in delete_button_vault_list(
                             b"u",
                             Rc::clone(&pwwindow_rc),
+                            mastlabel_dprc.text().as_str().to_owned(),
                             vname_str_res.unwrap(),
                             Rc::new(application),
                             Rc::clone(&vcomm_label),
@@ -1009,7 +1053,7 @@ fn open_main(application: &gtk4::Application) {
             }
         }
     ));
-    grid.attach(&delete_button, 3, 2, 1, 1);
+    grid.attach(&delete_button, 5, 2, 2, 1);
 
     window.set_child(Some(&grid));
     window.present();
@@ -1017,16 +1061,14 @@ fn open_main(application: &gtk4::Application) {
     // Check if this is fresh
     // Get path
     if let Some(vaultpath) = get_vault_path() {
-        // Try to create new file, true if new
-        if let Ok(file) = fs::File::create_new(&vaultpath) {
-            // Fresh install, do some setup
-            baseaes_setup(&application, Rc::clone(&window), file, vaultpath);
-        };
+        if let Ok(false) = fs::exists(&vaultpath) {
+            baseaes_setup(&application, Rc::clone(&window), master_location_label);
+        }
     } else {
         show_alert(
             window.as_ref(),
-            "Error",
-            "Failed to detect the path to 'master.vbase'.",
+            "Warning",
+            "Failed to detect the default path to the master vault.",
         );
     };
 }
