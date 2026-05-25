@@ -122,11 +122,34 @@ fn open_main(application: &gtk4::Application) {
     grid.attach(master_location_label.as_ref(), 2, 3, 3, 1);
 
     // Master vault location changer
-    let master_location_button = gtk4::Button::with_label("Change");
+    let master_location_button = gtk4::MenuButton::builder()
+        .direction(gtk4::ArrowType::Down)
+        .label("Change")
+        .build();
+
+    let mlc_popover = Rc::new(
+        gtk4::Popover::builder()
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .vexpand(true)
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
+
+    let mlc_vbox = gtk4::Box::builder()
+        .spacing(6)
+        .hexpand(true)
+        .vexpand(true)
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+
+    let change_button = gtk4::Button::with_label("Select from file");
 
     let window_lrc = Rc::clone(&window);
     let mastlabel_lrc = Rc::clone(&master_location_label);
-    master_location_button.connect_clicked(move |_| {
+    change_button.connect_clicked(move |_| {
         let mastersel_dialog = gtk4::FileDialog::builder()
             .modal(true)
             .title("Select the master vault...")
@@ -153,6 +176,24 @@ fn open_main(application: &gtk4::Application) {
             },
         );
     });
+    mlc_vbox.append(&change_button);
+
+    let create_button = gtk4::Button::with_label("Create new master");
+    let window_crc = Rc::clone(&window);
+    let application_clone = application.clone();
+    let mastlabel_crc = Rc::clone(&master_location_label);
+    create_button.connect_clicked(move |_| {
+        baseaes_setup(
+            &application_clone,
+            Rc::clone(&window_crc),
+            Rc::clone(&mastlabel_crc),
+            false,
+        );
+    });
+    mlc_vbox.append(&create_button);
+
+    mlc_popover.set_child(Some(&mlc_vbox));
+    master_location_button.set_popover(Some(mlc_popover.as_ref()));
     grid.attach(&master_location_button, 5, 3, 2, 1);
 
     // Add vault button
@@ -1062,7 +1103,12 @@ fn open_main(application: &gtk4::Application) {
     // Get path
     if let Some(vaultpath) = get_vault_path() {
         if let Ok(false) = fs::exists(&vaultpath) {
-            baseaes_setup(&application, Rc::clone(&window), master_location_label);
+            baseaes_setup(
+                &application,
+                Rc::clone(&window),
+                master_location_label,
+                true,
+            );
         }
     } else {
         show_alert(
@@ -1086,7 +1132,7 @@ const ABOUT_APP_TEXT: &str = concat!(
     "BaseAES is a simple filesystem-like\n",
     "  vault system with strong encryption.\n\n",
     "Developed by @7654jp\n\n",
-    "This software is licensed under\n",
+    "This software is licensed under the\n",
     "  version 3 of the GNU General Public License.\n",
     "For details, see LICENSE file in the repository."
 );

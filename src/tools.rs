@@ -652,10 +652,14 @@ pub fn master_update_data(
 ) -> bool {
     // Open tmp and lock
     let vtmppath = mastpath.to_owned() + ".tmp";
-    let base_file = match fs::File::create(&vtmppath) {
+    let base_file = match fs::File::create_new(&vtmppath) {
         Ok(f) => f,
         Err(_) => {
-            show_alert(parent, "Error", "Could not create a temp file.");
+            show_alert(
+                parent,
+                "Error",
+                "Could not create a temp file.\nPlease rename the vault name + '.tmp' file and try again.",
+            );
             return false;
         }
     };
@@ -1256,6 +1260,7 @@ pub fn baseaes_setup(
     application: &gtk4::Application,
     window: Rc<gtk4::ApplicationWindow>,
     mpathlocator: Rc<gtk4::Entry>,
+    close_main: bool,
 ) {
     // Setup window
     let setup_window = Rc::new(
@@ -1367,6 +1372,7 @@ pub fn baseaes_setup(
     let setup_already_done_button = gtk4::Button::with_label("I already have the master vault");
 
     let setup_window_arc = Rc::clone(&setup_window);
+    let mpathlocator_arc = Rc::clone(&mpathlocator);
     setup_already_done_button.connect_clicked(move |_| {
         let setup_mfile_seldialog = gtk4::FileDialog::builder()
             .modal(true)
@@ -1374,7 +1380,7 @@ pub fn baseaes_setup(
             .build();
 
         let setup_window_src = Rc::clone(&setup_window_arc);
-        let mpathlocator_rc = Rc::clone(&mpathlocator);
+        let mpathlocator_src = Rc::clone(&mpathlocator_arc);
         setup_mfile_seldialog.open(
             Some(setup_window_arc.as_ref()),
             gtk4::gio::Cancellable::NONE,
@@ -1397,7 +1403,7 @@ pub fn baseaes_setup(
                     return;
                 }
 
-                mpathlocator_rc.set_text(&filepath);
+                mpathlocator_src.set_text(&filepath);
 
                 setup_window_src.add_css_class("init_complete");
                 setup_window_src.close();
@@ -1414,6 +1420,7 @@ pub fn baseaes_setup(
     let swindow_rc = Rc::clone(&setup_window);
     let setup_aes_sel1 = Rc::clone(&setup_aes_selector1);
     let setup_aes_sel2 = Rc::clone(&setup_aes_selector2);
+    let mpathlocator_crc = Rc::clone(&mpathlocator);
     setup_confirm_button.connect_clicked(move |_| {
         let use_intk = setup_aes_sel1.is_active();
         if !(use_intk || setup_aes_sel2.is_active()) {
@@ -1521,6 +1528,7 @@ pub fn baseaes_setup(
             show_alert(swindow_rc.as_ref(), "Error", "Failed to flush the buffer.");
             let _ = fs::remove_file(&mvaultpath);
         }
+        mpathlocator_crc.set_text(&mvaultpath);
         swindow_rc.add_css_class("init_complete");
         swindow_rc.close();
     });
@@ -1528,7 +1536,7 @@ pub fn baseaes_setup(
 
     setup_window.set_child(Some(&setup_grid));
     setup_window.connect_close_request(move |swindow| {
-        if !swindow.has_css_class("init_complete") {
+        if !swindow.has_css_class("init_complete") && close_main {
             window.close();
         };
         glib::Propagation::Proceed
