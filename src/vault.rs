@@ -6,6 +6,8 @@
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -488,100 +490,15 @@ fn open_vault(
             }
 
             vcf_window_rcf2.close();
-
-            if iviewer_title_rcf2.borrow().text().ends_with("*") {
-                // Do you want to discard changes in ...?
-                let title_txt = iviewer_title_rcf2.borrow().text();
-                let discard_window = Rc::new(gtk4::Window::new());
-                discard_window.set_application(Some(app_rcf2.as_ref()));
-                discard_window.set_title(Some("Discard changes?"));
-                discard_window.set_default_size(220, 48);
-                discard_window.set_modal(true);
-                let discard_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-
-                let discard_title = gtk4::Label::new(Some(&format!(
-                    "Do you want to discard changes in '{}'?",
-                    title_txt.rsplit_once("  ").unwrap().0
-                )));
-                discard_grid.attach(&discard_title, 1, 1, 3, 1);
-
-                let discard_no_button = gtk4::Button::with_label("Cancel");
-                discard_no_button.set_size_request(60, 32);
-
-                let dwindow_nrc = Rc::clone(&discard_window);
-                discard_no_button.connect_clicked(move |_| {
-                    dwindow_nrc.close();
-                });
-                discard_grid.attach(&discard_no_button, 1, 2, 1, 1);
-
-                let discard_yes_button = gtk4::Button::with_label("Discard");
-                discard_yes_button.set_size_request(60, 32);
-
-                let index_drc = Rc::clone(&vindex_rcf2);
-                let data_drc = Rc::clone(&vdata_rcf2);
-                let idcs_drc = Rc::clone(&idcs_rcf2);
-                let ipath_drc = Rc::clone(&ipath_rc);
-                let nviewer_drc = Rc::clone(&iviewer_title_rcf2);
-                let cviewer_drc = Rc::clone(&iviewer_rcf2);
-                let dwindow_yrc = Rc::clone(&discard_window);
-                discard_yes_button.connect_clicked(move |_| {
-                    let fileid = PathBuf::from(ipath_drc.as_ref());
-                    let title = match index_drc.borrow().get(&fileid) {
-                        Some(s) => s.to_owned(),
-                        None => return,
-                    };
-                    let data = match data_drc.borrow().get(&fileid) {
-                        Some(d) => d.to_owned(),
-                        None => return,
-                    };
-                    cviewer_drc.set_child(Some(
-                        get_item_viewer_grid(
-                            &title,
-                            &data,
-                            Rc::clone(&index_drc),
-                            Rc::clone(&data_drc),
-                            Rc::clone(&nviewer_drc),
-                            Rc::clone(&idcs_drc),
-                        )
-                        .as_ref(),
-                    ));
-
-                    nviewer_drc
-                        .borrow_mut()
-                        .set_itext(format!("{}:{title}^", ipath_drc.as_ref()));
-
-                    dwindow_yrc.close();
-                });
-                discard_grid.attach(&discard_yes_button, 3, 2, 1, 1);
-
-                discard_window.set_child(Some(&discard_grid));
-                discard_window.present();
-            } else {
-                let fileid = PathBuf::from(ipath_rc.as_ref());
-                let title = match vindex_rcf2.borrow().get(&fileid) {
-                    Some(s) => s.to_owned(),
-                    None => return,
-                };
-                let data = match vdata_rcf2.borrow().get(&fileid) {
-                    Some(d) => d.to_owned(),
-                    None => return,
-                };
-                iviewer_rcf2.set_child(Some(
-                    get_item_viewer_grid(
-                        &title,
-                        &data,
-                        Rc::clone(&vindex_rcf2),
-                        Rc::clone(&vdata_rcf2),
-                        Rc::clone(&iviewer_title_rcf2),
-                        Rc::clone(&idcs_rcf2),
-                    )
-                    .as_ref(),
-                ));
-
-                iviewer_title_rcf2
-                    .borrow_mut()
-                    .set_itext(format!("{}:{title}^", ipath_rc.as_ref()));
-            }
+            open_other_file(
+                Rc::clone(&app_rcf2),
+                Rc::clone(&iviewer_rcf2),
+                Rc::clone(&iviewer_title_rcf2),
+                Rc::clone(&vindex_rcf2),
+                Rc::clone(&vdata_rcf2),
+                ipath_rc,
+                Rc::clone(&idcs_rcf2),
+            );
         });
         vcf_grid.attach(&vcf_ok_button, 2, 2, 1, 1);
 
@@ -590,7 +507,7 @@ fn open_vault(
     });
     vaf_vbox.append(&vaf_createb);
 
-    let vaf_importb = gtk4::Button::with_label("Import file");
+    let vaf_importb = gtk4::Button::with_label("Import from file");
     vaf_importb.set_size_request(96, 40);
 
     // Rc suffix: _rif
@@ -729,6 +646,150 @@ fn open_vault(
         );
     });
     vaf_vbox.append(&vaf_importb);
+
+    let vaf_b64importb = gtk4::Button::with_label("Import from Base64");
+    vaf_importb.set_size_request(96, 40);
+
+    // Rc suffix: _rib
+    let iviewer_title_rib = Rc::clone(&item_viewer_title);
+    let vfilelist_rib = Rc::clone(&vault_file_list);
+    let vexpath_rib = Rc::clone(&vexplorer_path);
+    let iviewer_rib = Rc::clone(&item_viewer);
+    let popover_rib = Rc::clone(&vaf_popover);
+    let changed_rib = Rc::clone(&changed);
+    let app_rib = Rc::clone(&application);
+    let vindex_rib = Rc::clone(&vindex);
+    let vdata_rib = Rc::clone(&vdata);
+    let idcs_rib = Rc::clone(&idcs);
+    vaf_b64importb.connect_clicked(move |_| {
+        popover_rib.popdown();
+        let b64input_window = Rc::new(gtk4::Window::new());
+        b64input_window.set_application(Some(app_rib.as_ref()));
+        b64input_window.set_title(Some("Import from Base64"));
+        b64input_window.set_default_size(320, 64);
+        b64input_window.set_modal(true);
+
+        let b64input_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+
+        let b64input_fntitle = gtk4::Label::new(Some("Enter file name:"));
+        b64input_grid.attach(&b64input_fntitle, 1, 1, 1, 1);
+
+        let b64input_filename = gtk4::Entry::new();
+        b64input_filename.set_size_request(160, 28);
+        b64input_grid.attach(&b64input_filename, 2, 1, 3, 1);
+
+        let b64input_b64title = gtk4::Label::new(Some("Enter Base64 below:"));
+        b64input_grid.attach(&b64input_b64title, 1, 2, 1, 1);
+
+        let b64input_entry = gtk4::Entry::new();
+        b64input_grid.attach(&b64input_entry, 1, 3, 4, 1);
+
+        let b64input_desc = gtk4::Label::new(Some(
+            "This prompt support:\nRaw Base64 (E.g. TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (E.g. data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)",
+        ));
+        b64input_grid.attach(&b64input_desc, 1, 4, 3, 3);
+
+        let b64input_okbtn = gtk4::Button::with_label("OK");
+
+        // Rc suffix: _rib2
+        let changed_rib2 = Rc::clone(&changed_rib);
+        let vindex_rib2 = Rc::clone(&vindex_rib);
+        let vdata_rib2 = Rc::clone(&vdata_rib);
+        let idcs_rib2 = Rc::clone(&idcs_rib);
+        let app_rib2 = Rc::clone(&app_rib);
+        let iviewer_title_rib2 = Rc::clone(&iviewer_title_rib);
+        let b64window_rib2 = Rc::clone(&b64input_window);
+        let vfilelist_rib2 = Rc::clone(&vfilelist_rib);
+        let iviewer_rib2 = Rc::clone(&iviewer_rib);
+        let vexpath_rib2 = Rc::clone(&vexpath_rib);
+        b64input_okbtn.connect_clicked(move |_| {
+            let text = b64input_entry.text();
+            let b64bin_res = BASE64_STANDARD.decode(if text.contains(",") {
+                text.rsplit_once(",").unwrap().1
+            } else {
+                &text
+            });
+            if let Ok(b64bin) = b64bin_res {
+                // File name filtering
+                let filename = b64input_filename.text().to_string();
+                if let Err(emsg) = itemname_check(&filename, "File") {
+                    show_alert(b64window_rib2.as_ref(), "Error", &emsg);
+                    return;
+                }
+
+                // Filename duplication check
+                let vpath = vexpath_rib2.borrow().get_itext().to_owned();
+                for (ipath, name) in &*vindex_rib2.borrow() {
+                    if !ipath.starts_with(&vpath) {
+                        continue;
+                    }
+                    // Exclude subdirectory here
+                    if ipath.parent().unwrap_or(&PathBuf::from("/")) != &vpath {
+                        continue;
+                    }
+
+                    if name == &filename {
+                        show_alert(
+                            b64window_rib2.as_ref(),
+                            "Alert",
+                            "The filename cannot be the same.",
+                        );
+                        return;
+                    }
+                }
+
+                // Append file info
+                let ipath_rc = Rc::new(vault_append_file(
+                    Rc::clone(&vexpath_rib2),
+                    filename,
+                    Some(&b64bin),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                ));
+                changed_rib2.borrow_mut().set(true);
+                b64window_rib2.close();
+
+                // Reload file
+                loop {
+                    let dwidget = match vfilelist_rib2.last_child() {
+                        Some(w) => w,
+                        None => break,
+                    };
+                    vfilelist_rib2.remove(&dwidget);
+                }
+                for button in get_files_from_vpath(
+                    Rc::clone(&app_rib2),
+                    Rc::clone(&vfilelist_rib2),
+                    Rc::clone(&idcs_rib2),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                    PathBuf::from(vexpath_rib2.borrow().get_itext()),
+                    Rc::clone(&iviewer_title_rib2),
+                    Rc::clone(&iviewer_rib2),
+                    Rc::clone(&vexpath_rib2),
+                ) {
+                    vfilelist_rib2.append(&*button);
+                }
+
+                open_other_file(
+                    Rc::clone(&app_rib2),
+                    Rc::clone(&iviewer_rib2),
+                    Rc::clone(&iviewer_title_rib2),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                    ipath_rc,
+                    Rc::clone(&idcs_rib2)
+                );
+            } else {
+                show_alert(b64window_rib2.as_ref(), "Error", "Failed to parse Base64 text.");
+            }
+        });
+        b64input_grid.attach(&b64input_okbtn, 4, 4, 1, 1);
+
+        b64input_window.set_child(Some(&b64input_grid));
+        b64input_window.present();
+    });
+    vaf_vbox.append(&vaf_b64importb);
 
     vaf_popover.set_child(Some(&vaf_vbox));
     vault_add_file.set_popover(Some(vaf_popover.as_ref()));
@@ -2435,101 +2496,15 @@ pub fn get_files_from_vpath(
                     }
                 };
 
-                let iname = name_viewer_frc.borrow().text();
-                if iname.ends_with("*") {
-                    // Do you want to discard changes in ...?
-                    let discard_window = Rc::new(gtk4::Window::new());
-                    discard_window.set_application(Some(app_frc.as_ref()));
-                    discard_window.set_title(Some("Discard changes?"));
-                    discard_window.set_default_size(220, 48);
-                    discard_window.set_modal(true);
-                    let discard_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-
-                    let discard_title = gtk4::Label::new(Some(&format!(
-                        "Do you want to discard changes in '{}'?",
-                        iname.rsplit_once("  ").unwrap().0
-                    )));
-                    discard_grid.attach(&discard_title, 1, 1, 3, 1);
-
-                    let discard_no_button = gtk4::Button::with_label("Cancel");
-                    discard_no_button.set_size_request(60, 32);
-
-                    let dwindow_nrc = Rc::clone(&discard_window);
-                    discard_no_button.connect_clicked(move |_| {
-                        dwindow_nrc.close();
-                    });
-                    discard_grid.attach(&discard_no_button, 1, 2, 1, 1);
-
-                    let discard_yes_button = gtk4::Button::with_label("Discard");
-                    discard_yes_button.set_size_request(60, 32);
-
-                    let index_drc = Rc::clone(&index_frc);
-                    let data_drc = Rc::clone(&data_frc);
-                    let ipath_drc = Rc::clone(&ipath);
-                    let idcs_drc = Rc::clone(&idcs_frc);
-                    let nviewer_drc = Rc::clone(&name_viewer_frc);
-                    let cviewer_drc = Rc::clone(&content_viewer_frc);
-                    let dwindow_yrc = Rc::clone(&discard_window);
-                    discard_yes_button.connect_clicked(move |_| {
-                        let fileid_str = ipath_drc.to_str().unwrap();
-                        let fileid = PathBuf::from(&fileid_str);
-                        let title = match index_drc.borrow().get(&fileid) {
-                            Some(s) => s.to_owned(),
-                            None => return,
-                        };
-                        let data = match data_drc.borrow().get(&fileid) {
-                            Some(d) => d.to_owned(),
-                            None => return,
-                        };
-                        cviewer_drc.set_child(Some(
-                            get_item_viewer_grid(
-                                &title,
-                                &data,
-                                Rc::clone(&index_drc),
-                                Rc::clone(&data_drc),
-                                Rc::clone(&nviewer_drc),
-                                Rc::clone(&idcs_drc),
-                            )
-                            .as_ref(),
-                        ));
-
-                        nviewer_drc
-                            .borrow_mut()
-                            .set_itext(format!("{fileid_str}:{title}^"));
-
-                        dwindow_yrc.close();
-                    });
-                    discard_grid.attach(&discard_yes_button, 3, 2, 1, 1);
-
-                    discard_window.set_child(Some(&discard_grid));
-                    discard_window.present();
-                } else {
-                    let fileid_str = ipath.to_str().unwrap();
-                    let fileid = PathBuf::from(&fileid_str);
-                    let title = match index_frc.borrow().get(&fileid) {
-                        Some(s) => s.to_owned(),
-                        None => return,
-                    };
-                    let data = match data_frc.borrow().get(&fileid) {
-                        Some(d) => d.to_owned(),
-                        None => return,
-                    };
-                    content_viewer_frc.set_child(Some(
-                        get_item_viewer_grid(
-                            &title,
-                            &data,
-                            Rc::clone(&index_frc),
-                            Rc::clone(&data_frc),
-                            Rc::clone(&name_viewer_frc),
-                            Rc::clone(&idcs_frc),
-                        )
-                        .as_ref(),
-                    ));
-
-                    name_viewer_frc
-                        .borrow_mut()
-                        .set_itext(format!("{fileid_str}:{title}^"));
-                }
+                open_other_file(
+                    Rc::clone(&app_frc),
+                    Rc::clone(&content_viewer_frc),
+                    Rc::clone(&name_viewer_frc),
+                    Rc::clone(&index_frc),
+                    Rc::clone(&data_frc),
+                    Rc::new(ipath_frc.display().to_string()),
+                    Rc::clone(&idcs_frc),
+                );
             });
         }
 
@@ -2814,6 +2789,110 @@ fn get_item_viewer_grid(
     };
 
     Rc::clone(&iviewer_grid)
+}
+
+fn open_other_file(
+    app_rc: Rc<gtk4::Application>,
+    iviewer_rc: Rc<gtk4::ScrolledWindow>,
+    iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
+    vindex_rc: Rc<RefCell<BTreeMap<PathBuf, String>>>,
+    vdata_rc: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
+    ipath_rc: Rc<String>,
+    idcs_rc: Rc<RefCell<ImgDecodingController>>,
+) {
+    if iviewer_title_rc.borrow().text().ends_with("*") {
+        // Do you want to discard changes in ...?
+        let title_txt = iviewer_title_rc.borrow().text();
+        let discard_window = Rc::new(gtk4::Window::new());
+        discard_window.set_application(Some(app_rc.as_ref()));
+        discard_window.set_title(Some("Discard changes?"));
+        discard_window.set_default_size(220, 48);
+        discard_window.set_modal(true);
+        let discard_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+
+        let discard_title = gtk4::Label::new(Some(&format!(
+            "Do you want to discard changes in '{}'?",
+            title_txt.rsplit_once("  ").unwrap().0
+        )));
+        discard_grid.attach(&discard_title, 1, 1, 3, 1);
+
+        let discard_no_button = gtk4::Button::with_label("Cancel");
+        discard_no_button.set_size_request(60, 32);
+
+        let dwindow_nrc = Rc::clone(&discard_window);
+        discard_no_button.connect_clicked(move |_| {
+            dwindow_nrc.close();
+        });
+        discard_grid.attach(&discard_no_button, 1, 2, 1, 1);
+
+        let discard_yes_button = gtk4::Button::with_label("Discard");
+        discard_yes_button.set_size_request(60, 32);
+
+        let index_drc = Rc::clone(&vindex_rc);
+        let data_drc = Rc::clone(&vdata_rc);
+        let idcs_drc = Rc::clone(&idcs_rc);
+        let ipath_drc = Rc::clone(&ipath_rc);
+        let nviewer_drc = Rc::clone(&iviewer_title_rc);
+        let cviewer_drc = Rc::clone(&iviewer_rc);
+        let dwindow_yrc = Rc::clone(&discard_window);
+        discard_yes_button.connect_clicked(move |_| {
+            let fileid = PathBuf::from(ipath_drc.as_ref());
+            let title = match index_drc.borrow().get(&fileid) {
+                Some(s) => s.to_owned(),
+                None => return,
+            };
+            let data = match data_drc.borrow().get(&fileid) {
+                Some(d) => d.to_owned(),
+                None => return,
+            };
+            cviewer_drc.set_child(Some(
+                get_item_viewer_grid(
+                    &title,
+                    &data,
+                    Rc::clone(&index_drc),
+                    Rc::clone(&data_drc),
+                    Rc::clone(&nviewer_drc),
+                    Rc::clone(&idcs_drc),
+                )
+                .as_ref(),
+            ));
+
+            nviewer_drc
+                .borrow_mut()
+                .set_itext(format!("{}:{title}^", ipath_drc.as_ref()));
+
+            dwindow_yrc.close();
+        });
+        discard_grid.attach(&discard_yes_button, 3, 2, 1, 1);
+
+        discard_window.set_child(Some(&discard_grid));
+        discard_window.present();
+    } else {
+        let fileid = PathBuf::from(ipath_rc.as_ref());
+        let title = match vindex_rc.borrow().get(&fileid) {
+            Some(s) => s.to_owned(),
+            None => return,
+        };
+        let data = match vdata_rc.borrow().get(&fileid) {
+            Some(d) => d.to_owned(),
+            None => return,
+        };
+        iviewer_rc.set_child(Some(
+            get_item_viewer_grid(
+                &title,
+                &data,
+                Rc::clone(&vindex_rc),
+                Rc::clone(&vdata_rc),
+                Rc::clone(&iviewer_title_rc),
+                Rc::clone(&idcs_rc),
+            )
+            .as_ref(),
+        ));
+
+        iviewer_title_rc
+            .borrow_mut()
+            .set_itext(format!("{}:{title}^", ipath_rc.as_ref()));
+    }
 }
 
 fn vault_append_file(
