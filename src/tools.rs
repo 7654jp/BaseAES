@@ -20,6 +20,7 @@ use std::rc::Rc;
 use zune_jpeg::zune_core::{bytestream, colorspace, options};
 use zune_png::PngDecoder;
 
+use crate::lang;
 use crate::types::*;
 use crate::vault::get_files_from_vpath;
 
@@ -104,20 +105,24 @@ pub fn get_vault_dir() -> Option<String> {
 }
 
 pub fn check_vault_name(
-    awindow: Rc<gtk4::ApplicationWindow>,
+    window: &impl IsA<gtk4::Window>,
     base_data: &String,
     vname: Rc<String>,
 ) -> Option<i16> {
     let mut vault_count: i16 = 0;
     for name in base_data.split(",") {
         if vault_count == 0 && name != "^BaseAES Vault Format Ver.2^" {
-            show_alert(awindow.as_ref(), "Error", "The vault index is corrupted.");
+            show_alert(
+                window,
+                lang::text::generic::ERROR,
+                lang::text::tools::VNAME_CHECK_CORRUPTED,
+            );
             return None;
         } else if name == vname.as_ref() {
             show_alert(
-                awindow.as_ref(),
-                "Alert",
-                "The vault name cannot be the same.",
+                window,
+                lang::text::generic::ALERT,
+                lang::text::tools::VNAME_CHECK_DUPLICATED,
             );
             return None;
         }
@@ -180,20 +185,34 @@ pub fn get_rpixbuf_from_jpeg_u8(jpgraw: Vec<u8>) -> Option<RawPixbuf> {
     ));
 }
 
-pub fn itemname_check(name: &String, ftype: &str) -> Result<(), String> {
+pub fn filename_check(name: &String) -> Result<(), &str> {
     if name.contains("^") || name.contains(":") || name.contains("/") || name.contains("'") {
-        return Err(format!(
-            "{ftype} name cannot contain \"^\" or \":\" or \"/\" or \"'\" .",
-        ));
+        return Err(lang::text::tools::FILENAME_ILLEGAL_CHARS);
     }
     if name.starts_with(" ") {
-        return Err(format!("{ftype} name cannot start with ' '."));
+        return Err(lang::text::tools::FILENAME_FIRST_WAS_SPACE);
     }
     if name.ends_with(" ") || name.ends_with(".") {
-        return Err(format!("{ftype} name cannot end with ' ' or '.'."));
+        return Err(lang::text::tools::FILENAME_ILLEGAL_ENDING);
     }
     if name.chars().count() == 0 {
-        return Err(format!("{ftype} name cannot be empty."));
+        return Err(lang::text::tools::FILENAME_EMPTY);
+    }
+    return Ok(());
+}
+
+pub fn dirname_check(name: &String) -> Result<(), &str> {
+    if name.contains("^") || name.contains(":") || name.contains("/") || name.contains("'") {
+        return Err(lang::text::tools::DIRNAME_ILLEGAL_CHARS);
+    }
+    if name.starts_with(" ") {
+        return Err(lang::text::tools::DIRNAME_FIRST_WAS_SPACE);
+    }
+    if name.ends_with(" ") || name.ends_with(".") {
+        return Err(lang::text::tools::DIRNAME_ILLEGAL_ENDING);
+    }
+    if name.chars().count() == 0 {
+        return Err(lang::text::tools::DIRNAME_EMPTY);
     }
     return Ok(());
 }
@@ -201,10 +220,7 @@ pub fn itemname_check(name: &String, ftype: &str) -> Result<(), String> {
 pub fn bgsf_decode_item(line: &str) -> Option<([i32; 4], &str)> {
     // @text:1/1/1/1:WhatEverThatIs.
     // @item:1/2/1/1:/path/to/whatever-item.png
-    let (style_str, data) = match line.split_once(":")?.1.split_once(":") {
-        Some((st, da)) => (st, da),
-        None => return None,
-    };
+    let (style_str, data) = line.split_once(":")?.1.split_once(":")?;
     let mut style: [i32; 4] = [0, 0, 0, 0];
     let mut style_str_sp = style_str.split("/").into_iter();
     for idx in 0..4 {
@@ -312,6 +328,7 @@ pub fn bgsf_parse_item(
                 IDCSImageType::from_str_name(lmime).unwrap(),
                 pdata.to_owned(),
                 Rc::clone(&image_viewer),
+                Rc::clone(&iviewer_grid),
             );
             iviewer_grid.attach(
                 image_viewer.as_ref(),
@@ -365,12 +382,14 @@ pub fn generate_new_vault(
 fn open_master(parent: Option<&impl IsA<gtk4::Window>>, mastpath: &str) -> Option<std::fs::File> {
     // Open file
     let rbase_file = std::fs::File::open(mastpath);
-    if rbase_file.is_err() && parent.is_some() {
-        show_alert(
-            parent.unwrap(),
-            "Error",
-            "Could not open the master vault in read_master.",
-        );
+    if rbase_file.is_err() {
+        if parent.is_some() {
+            show_alert(
+                parent.unwrap(),
+                lang::text::generic::ERROR,
+                lang::text::tools::OPEN_MAST_FAILED,
+            );
+        }
         return None;
     }
     Some(rbase_file.unwrap())
@@ -435,8 +454,8 @@ pub fn encrypt_aes_with_key(
         Err(_) => {
             show_alert(
                 parent,
-                "Error",
-                "Failed to initialize encryption. Aborting.",
+                lang::text::generic::ERROR,
+                lang::text::tools::AES_ENCRYPT_INIT_FAILED,
             );
             return None;
         }
@@ -444,14 +463,22 @@ pub fn encrypt_aes_with_key(
     let mut rng = OsRng::default();
     let mut nonce_ary: [u8; 12] = Default::default();
     if rng.try_fill_bytes(&mut nonce_ary).is_err() {
-        show_alert(parent, "Error", "Failed to generate nonce. Aborting.");
+        show_alert(
+            parent,
+            lang::text::generic::ERROR,
+            lang::text::tools::AES_ENCRYPT_NONCEGEN_FAILED,
+        );
         return None;
     };
     let nonce = Nonce::from_slice(&nonce_ary);
 
     let rencrypted = cipher.encrypt(nonce, value);
     if rencrypted.is_err() {
-        show_alert(parent, "Error", "Failed to encrypt default data. Aborting.");
+        show_alert(
+            parent,
+            lang::text::generic::ERROR,
+            lang::text::tools::AES_ENCRYPT_EXEC_FAILED,
+        );
         return None;
     }
     Some((nonce_ary, rencrypted.unwrap()))
@@ -480,7 +507,11 @@ pub fn decrypt_aes_with_key(
     let rbase_data = cipher.decrypt(nonce, ciphertext);
     if rbase_data.is_err() {
         if show_error == true && parent.is_some() {
-            show_alert(parent.unwrap(), "Error", "Failed to decrypt provided data.");
+            show_alert(
+                parent.unwrap(),
+                lang::text::generic::ERROR,
+                lang::text::tools::AES_DECRYPT_EXEC_FAILED,
+            );
         }
         return None;
     }
@@ -498,14 +529,23 @@ pub fn master_read_vname(
         }
     };
 
+    if base_file.lock().is_err() {
+        show_alert(
+            parent,
+            lang::text::generic::ERROR,
+            lang::text::generic::MAST_LOCK_FAILED,
+        );
+        return None;
+    }
+
     // Read data
     let mut vname_ibuf = [0u8; 17];
     let rread_vnamed = base_file.read_exact(&mut vname_ibuf);
     if rread_vnamed.is_err() {
         show_alert(
             parent,
-            "Error",
-            "Failed to read 'vname-info' from the master vault.",
+            lang::text::generic::ERROR,
+            lang::text::tools::READ_MAST_VINFO_FAILED,
         );
         return None;
     }
@@ -517,8 +557,8 @@ pub fn master_read_vname(
     if rread_vcipher.is_err() {
         show_alert(
             parent,
-            "Error",
-            "Failed to read 'vname-cipher' from the master vault.",
+            lang::text::generic::ERROR,
+            lang::text::tools::READ_MAST_VNAME_FAILED,
         );
         return None;
     }
@@ -541,8 +581,8 @@ pub fn master_read_vault_at(
         if show_error {
             show_alert(
                 parent.unwrap(),
-                "Error",
-                "Failed to acquire a lock to the master vault.\nAborting due to unreliable read.",
+                lang::text::generic::ERROR,
+                lang::text::generic::MAST_LOCK_FAILED,
             );
         }
         return None;
@@ -556,8 +596,8 @@ pub fn master_read_vault_at(
             if show_error {
                 show_alert(
                     parent.unwrap(),
-                    "Error",
-                    "Failed to read 'vname-info' from the master vault.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::READ_MAST_VINFO_FAILED,
                 );
             }
             return None;
@@ -566,7 +606,11 @@ pub fn master_read_vault_at(
 
     if base_file.seek_relative(vname_length as i64).is_err() {
         if show_error {
-            show_alert(parent.unwrap(), "Error", "Failed to skip 'vname-cipher'.");
+            show_alert(
+                parent.unwrap(),
+                lang::text::generic::ERROR,
+                lang::text::tools::READ_MAST_VNAME_SEEK_FAILED,
+            );
         }
         return None;
     };
@@ -581,8 +625,8 @@ pub fn master_read_vault_at(
                     if show_error {
                         show_alert(
                             parent.unwrap(),
-                            "Error",
-                            "Failed to read 'vdata-length(skip)' from the master vault.",
+                            lang::text::generic::ERROR,
+                            lang::text::tools::READ_MAST_VDLEN_SKIP_FAILED,
                         );
                     }
                     return None;
@@ -593,8 +637,8 @@ pub fn master_read_vault_at(
                 if show_error {
                     show_alert(
                         parent.unwrap(),
-                        "Error",
-                        "Failed to skip 'vdata' that is prior to the index.",
+                        lang::text::generic::ERROR,
+                        lang::text::tools::READ_MAST_VDLEN_SEEK_FAILED,
                     );
                 }
                 return None;
@@ -603,39 +647,27 @@ pub fn master_read_vault_at(
     }
 
     // Read the vault at (index)
-    let mut vdata_noncebuf = [0u8; 12];
-    if base_file.read_exact(&mut vdata_noncebuf).is_err() {
+    let mut vdata_infobuf = [0u8; 16];
+    if base_file.read_exact(&mut vdata_infobuf).is_err() {
         if show_error {
             show_alert(
                 parent.unwrap(),
-                "Error",
-                "Failed to read 'vdata-nonce' from the master vault.",
+                lang::text::generic::ERROR,
+                lang::text::tools::READ_MAST_VDINFO_FAILED,
             );
         }
         return None;
     };
-    let mut vdata_lengthbuf = [0u8; 4];
-    let vdata_length = match base_file.read_exact(&mut vdata_lengthbuf) {
-        Ok(_) => u32::from_le_bytes(vdata_lengthbuf),
-        Err(_) => {
-            if show_error {
-                show_alert(
-                    parent.unwrap(),
-                    "Error",
-                    "Failed to read 'vdata-length' from the master vault.",
-                );
-            }
-            return None;
-        }
-    };
+    let vdata_noncebuf: [u8; 12] = vdata_infobuf[0..12].try_into().unwrap();
+    let vdata_length = u32::from_le_bytes(vdata_infobuf[12..16].try_into().unwrap());
 
     let mut vdata_cipherbuf = vec![0u8; vdata_length as usize];
     if base_file.read_exact(&mut vdata_cipherbuf).is_err() {
         if show_error {
             show_alert(
                 parent.unwrap(),
-                "Error",
-                "Failed to read 'vdata-cipher' from the master vault.",
+                lang::text::generic::ERROR,
+                lang::text::tools::READ_MAST_VDATA_FAILED,
             );
         }
         return None;
@@ -657,8 +689,8 @@ pub fn master_update_data(
         Err(_) => {
             show_alert(
                 parent,
-                "Error",
-                "Could not create a temp file.\nPlease rename the vault name + '.tmp' file and try again.",
+                lang::text::generic::ERROR,
+                lang::text::tools::UPDATE_MAST_OPEN_TMP_FAILED,
             );
             return false;
         }
@@ -666,9 +698,10 @@ pub fn master_update_data(
     if base_file.lock().is_err() {
         show_alert(
             parent,
-            "Error",
-            "Failed to acquire lock to the BaseAES temporary file.\nAborting due to unreliable file access.",
+            lang::text::generic::ERROR,
+            lang::text::generic::MAST_TMP_LOCK_FAILED,
         );
+        return false;
     };
     let mut bfile_bufwriter = BufWriter::new(base_file);
 
@@ -680,9 +713,10 @@ pub fn master_update_data(
     if current_file.lock().is_err() {
         show_alert(
             parent,
-            "Error",
-            "Failed to acquire lock to the master vault.\nAborting due to unreliable file access.",
+            lang::text::generic::ERROR,
+            lang::text::generic::MAST_LOCK_FAILED,
         );
+        return false;
     };
 
     let mut written_bytes: usize = 0;
@@ -695,8 +729,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vtype' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VTYPE_BUFWRITE_FAILED,
                 );
                 return false;
             }
@@ -706,8 +740,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vname-nonce' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VNNONCE_BUFWRITE_FAILED,
                 );
                 return false;
             }
@@ -718,8 +752,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vname-length' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VNLEN_BUFWRITE_FAILED,
                 );
                 return false;
             }
@@ -729,15 +763,19 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vname-cipher' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VNAME_BUFWRITE_FAILED,
                 );
                 return false;
             }
         };
         // Skip vname on current
         if current_file.seek_relative(13).is_err() {
-            show_alert(parent, "Error", "Failed to skip 'vname-info'.");
+            show_alert(
+                parent,
+                lang::text::generic::ERROR,
+                lang::text::tools::UPDATE_MAST_VINFO_SEEK_FAILED,
+            );
             return false;
         }
         let mut cvname_buf = [0u8; 4];
@@ -746,8 +784,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to read 'vname-length' from the master vault.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VNLEN_READ_FAILED,
                 );
                 return false;
             }
@@ -755,8 +793,8 @@ pub fn master_update_data(
         if current_file.seek_relative(cvname_len).is_err() {
             show_alert(
                 parent,
-                "Error",
-                "Failed to read 'vname-cipher' to be copied.",
+                lang::text::generic::ERROR,
+                lang::text::tools::UPDATE_MAST_VNAME_SEEK_FAILED,
             );
             return false;
         };
@@ -764,7 +802,11 @@ pub fn master_update_data(
         // Copy vname
         let mut curr_vnameibuf = [0u8; 17];
         if current_file.read_exact(&mut curr_vnameibuf).is_err() {
-            show_alert(parent, "Error", "Failed to read 'vname-info' to be copied.");
+            show_alert(
+                parent,
+                lang::text::generic::ERROR,
+                lang::text::tools::UPDATE_MAST_VINFO_COPY_FAILED,
+            );
             return false;
         };
         written_bytes += match bfile_bufwriter.write(&curr_vnameibuf) {
@@ -772,8 +814,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vname-info' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VINFO_BUFWRITE_FAILED,
                 );
                 return false;
             }
@@ -783,8 +825,8 @@ pub fn master_update_data(
         if current_file.read_exact(&mut curr_vnamebuf).is_err() {
             show_alert(
                 parent,
-                "Error",
-                "Failed to read 'vname-cipher' to be copied.",
+                lang::text::generic::ERROR,
+                lang::text::tools::UPDATE_MAST_VNAME_COPY_FAILED,
             );
             return false;
         };
@@ -793,8 +835,8 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
-                    "Failed to write 'vname-cipher' to an output buffer.",
+                    lang::text::generic::ERROR,
+                    lang::text::tools::UPDATE_MAST_VNAME_BUFWRITE_FAILED,
                 );
                 return false;
             }
@@ -808,7 +850,11 @@ pub fn master_update_data(
             // Copy and then append
             let mut curr_vdatabuf = Vec::new();
             if current_file.read_to_end(&mut curr_vdatabuf).is_err() {
-                show_alert(parent, "Error", "Failed to read 'vdata' to be copied.");
+                show_alert(
+                    parent,
+                    lang::text::generic::ERROR,
+                    "Failed to read 'vdata' to be copied.",
+                );
                 return false;
             };
             written_bytes += match bfile_bufwriter.write(&curr_vdatabuf) {
@@ -816,7 +862,7 @@ pub fn master_update_data(
                 Err(_) => {
                     show_alert(
                         parent,
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to write 'vdata' to an output buffer.",
                     );
                     return false;
@@ -829,7 +875,7 @@ pub fn master_update_data(
                 Err(_) => {
                     show_alert(
                         parent,
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to write 'vdata-nonce' to an output buffer.",
                     );
                     return false;
@@ -842,7 +888,7 @@ pub fn master_update_data(
                 Err(_) => {
                     show_alert(
                         parent,
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to write 'vdata-len' to an output buffer.",
                     );
                     return false;
@@ -853,7 +899,7 @@ pub fn master_update_data(
                 Err(_) => {
                     show_alert(
                         parent,
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to write 'vdata-cipher' to an output buffer.",
                     );
                     return false;
@@ -866,17 +912,29 @@ pub fn master_update_data(
                 if lp_index == index {
                     // Skip this in current
                     if current_file.seek_relative(12).is_err() {
-                        show_alert(parent, "Error", "Failed to skip 'vdata-info'.");
+                        show_alert(
+                            parent,
+                            lang::text::generic::ERROR,
+                            "Failed to skip 'vdata-info'.",
+                        );
                     }
                     let mut curr_vdatalbuf = [0u8; 4];
                     if current_file.read_exact(&mut curr_vdatalbuf).is_err() {
-                        show_alert(parent, "Error", "Failed to read 'vdata-length' to skip.");
+                        show_alert(
+                            parent,
+                            lang::text::generic::ERROR,
+                            "Failed to read 'vdata-length' to skip.",
+                        );
                     }
                     if current_file
                         .seek_relative(i64::from(u32::from_le_bytes(curr_vdatalbuf)))
                         .is_err()
                     {
-                        show_alert(parent, "Error", "Failed to skip 'vdata-cipher'.");
+                        show_alert(
+                            parent,
+                            lang::text::generic::ERROR,
+                            "Failed to skip 'vdata-cipher'.",
+                        );
                     }
 
                     if vault_data.is_none() {
@@ -890,7 +948,7 @@ pub fn master_update_data(
                         Err(_) => {
                             show_alert(
                                 parent,
-                                "Error",
+                                lang::text::generic::ERROR,
                                 "Failed to write 'vdata-nonce' to an output buffer.",
                             );
                             return false;
@@ -902,7 +960,7 @@ pub fn master_update_data(
                             Err(_) => {
                                 show_alert(
                                     parent,
-                                    "Error",
+                                    lang::text::generic::ERROR,
                                     "Failed to write 'vtype' to an output buffer.",
                                 );
                                 return false;
@@ -913,7 +971,7 @@ pub fn master_update_data(
                         Err(_) => {
                             show_alert(
                                 parent,
-                                "Error",
+                                lang::text::generic::ERROR,
                                 "Failed to write 'vtype' to an output buffer.",
                             );
                             return false;
@@ -930,7 +988,7 @@ pub fn master_update_data(
                         Err(_) => {
                             show_alert(
                                 parent,
-                                "Error",
+                                lang::text::generic::ERROR,
                                 "Failed to write 'vdata-info' to an output buffer.",
                             );
                             return false;
@@ -940,7 +998,11 @@ pub fn master_update_data(
                     let vdata_len = u32::from_le_bytes(curr_vdataibuf[12..16].try_into().unwrap());
                     let mut curr_vdatabuf = vec![0u8; vdata_len as usize];
                     if current_file.read_exact(&mut curr_vdatabuf).is_err() {
-                        show_alert(parent, "Error", "Failed to read 'vdata-cipher'.");
+                        show_alert(
+                            parent,
+                            lang::text::generic::ERROR,
+                            "Failed to read 'vdata-cipher'.",
+                        );
                         break;
                     };
                     written_bytes += match bfile_bufwriter.write(&curr_vdatabuf) {
@@ -948,7 +1010,7 @@ pub fn master_update_data(
                         Err(_) => {
                             show_alert(
                                 parent,
-                                "Error",
+                                lang::text::generic::ERROR,
                                 "Failed to write 'vdata' to an output buffer.",
                             );
                             return false;
@@ -962,7 +1024,11 @@ pub fn master_update_data(
         // Copy vdata
         let mut curr_vdatabuf = Vec::new();
         if current_file.read_to_end(&mut curr_vdatabuf).is_err() {
-            show_alert(parent, "Error", "Failed to read 'vdata' to be copied.");
+            show_alert(
+                parent,
+                lang::text::generic::ERROR,
+                "Failed to read 'vdata' to be copied.",
+            );
             return false;
         };
         written_bytes += match bfile_bufwriter.write(&curr_vdatabuf) {
@@ -970,7 +1036,7 @@ pub fn master_update_data(
             Err(_) => {
                 show_alert(
                     parent,
-                    "Error",
+                    lang::text::generic::ERROR,
                     "Failed to write 'vtype' to an output buffer.",
                 );
                 return false;
@@ -981,7 +1047,7 @@ pub fn master_update_data(
     if bfile_bufwriter.flush().is_err() {
         show_alert(
             parent,
-            "Error",
+            lang::text::generic::ERROR,
             "Failed to write data to the BaseAES temporary file.",
         );
         return false;
@@ -992,7 +1058,7 @@ pub fn master_update_data(
     if rcopy.is_err() {
         show_alert(
             parent,
-            "Alert",
+            lang::text::generic::ALERT,
             "Failed to copy from the temporary file to the master vault.\nPlease try renaming the temporary file manually.",
         );
         return true;
@@ -1000,7 +1066,7 @@ pub fn master_update_data(
     if rcopy.unwrap() != written_bytes as u64 {
         show_alert(
             parent,
-            "Alert",
+            lang::text::generic::ALERT,
             "Failed to copy from the temporary file to the master vault.\nPlease check the temporary file, which may be corrupted.",
         );
         return true;
@@ -1010,7 +1076,7 @@ pub fn master_update_data(
     if std::fs::remove_file(vtmppath).is_err() {
         show_alert(
             parent,
-            "Alert",
+            lang::text::generic::ALERT,
             "Failed to delete the temporary file.\nTry deleteing it manually.",
         );
     };
@@ -1056,7 +1122,7 @@ pub fn delete_button_vault_list(
                     // Ask vault password
                     let pw_window = Rc::new(
                         gtk4::Window::builder()
-                            .title("Confirm deletion")
+                            .title(lang::text::tools::DELETE_VAULT_CONF_TITLE)
                             .modal(true)
                             .build(),
                     );
@@ -1066,7 +1132,7 @@ pub fn delete_button_vault_list(
                     let vdel_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                     // Password label
-                    let pw_pass_label = gtk4::Label::new(Some("Enter Vault password to confirm:"));
+                    let pw_pass_label = gtk4::Label::new(Some(lang::text::tools::DELETE_VAULT_CONF_DESC));
                     vdel_grid.attach(&pw_pass_label, 1, 1, 2, 1);
                     // Password input box
                     let vdel_pass_box = gtk4::PasswordEntry::new();
@@ -1082,7 +1148,7 @@ pub fn delete_button_vault_list(
                     pw_ok_button.connect_clicked(move |_| {
                         // Decode
                         let vault_password =
-                            Rc::new(hashify_sha256(vdel_pass_box.text().to_string()));
+                            Rc::new(hashify_sha256(vdel_pass_box.text().to_string() + VAULT_SALT));
                         let (mast_decoded_noncer, mast_decoded_vname) = mast_decoded_vname.split_at(12);
                         let mast_decoded_nonce: [u8; 12] = mast_decoded_noncer.try_into().unwrap();
 
@@ -1107,7 +1173,7 @@ pub fn delete_button_vault_list(
                             None => {
                                 show_alert(
                                     pw_window_rc.as_ref(),
-                                    "Alert",
+                                    lang::text::generic::ALERT,
                                     "Vault decryption failed.\nThe password might be incorrect.",
                                 );
                                 return;
@@ -1121,7 +1187,7 @@ pub fn delete_button_vault_list(
                 } else {
                     show_alert(
                         pwindow_rc.as_ref(),
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to decrypt master vault.",
                     );
                 };
@@ -1192,7 +1258,7 @@ pub fn delete_button_vault_list(
                         pw_ok_button.connect_clicked(move |_| {
                             // Decode
                             let vault_password =
-                                Rc::new(hashify_sha256(vdel_pass_box.text().to_string()));
+                                Rc::new(hashify_sha256(vdel_pass_box.text().to_string() + VAULT_SALT));
                             let (demast_vault_nonces, demast_vault_data) = demast_vault.split_at(12);
                             let demast_vault_nonce: [u8; 12] = demast_vault_nonces.try_into().unwrap();
 
@@ -1217,7 +1283,7 @@ pub fn delete_button_vault_list(
                                 None => {
                                     show_alert(
                                         pw_window_rc.as_ref(),
-                                        "Alert",
+                                        lang::text::generic::ALERT,
                                         "Vault decryption failed.\nThe password might be incorrect.",
                                     );
                                     return;
@@ -1231,7 +1297,7 @@ pub fn delete_button_vault_list(
                     } else {
                         show_alert(
                             pwindow_urc.as_ref(),
-                            "Error",
+                            lang::text::generic::ERROR,
                             "Failed to decrypt master vault.\nThe password might be incorrect.",
                         );
                     };
@@ -1245,7 +1311,7 @@ pub fn delete_button_vault_list(
             } else {
                 show_alert(
                     pwindow_rc.as_ref(),
-                    "Error",
+                    lang::text::generic::ERROR,
                     "Failed to parse master vault.",
                 );
             }
@@ -1266,7 +1332,7 @@ pub fn baseaes_setup(
     let setup_window = Rc::new(
         gtk4::Window::builder()
             .application(application)
-            .title("BaseAES setup")
+            .title(lang::text::setup::WELCOME_TITLE)
             .resizable(false)
             .modal(true)
             .build(),
@@ -1278,13 +1344,11 @@ pub fn baseaes_setup(
         .vexpand(true)
         .build();
 
-    let setup_title = gtk4::Label::new(Some("Welcome to BaseAES!"));
+    let setup_title = gtk4::Label::new(Some(lang::text::setup::WELCOME_BASEAES));
     setup_title.add_css_class("big");
     setup_grid.attach(&setup_title, 1, 1, 7, 1);
 
-    let setup_desc = gtk4::Label::new(Some(
-        "BaseAES will help keep your files safe.\nRead PRECAUTIONS before start!",
-    ));
+    let setup_desc = gtk4::Label::new(Some(lang::text::setup::WELCOME_DESC));
     setup_grid.attach(&setup_desc, 1, 2, 7, 1);
 
     // Read before continue
@@ -1309,11 +1373,15 @@ pub fn baseaes_setup(
     setup_grid.attach(&setup_vline, 3, 3, 1, 8);
 
     // Master vault location selector
-    let setup_location_desc = gtk4::Label::new(Some("Master file will be saved at:"));
+    let setup_location_desc = gtk4::Label::new(Some(lang::text::setup::WELCOME_MASTER_WILL_BE));
     setup_grid.attach(&setup_location_desc, 1, 3, 2, 1);
 
-    let setup_location_defsel = Rc::new(gtk4::CheckButton::with_label("Default location"));
-    let setup_location_usersel = Rc::new(gtk4::CheckButton::with_label("Other place"));
+    let setup_location_defsel = Rc::new(gtk4::CheckButton::with_label(
+        lang::text::setup::WELCOME_MASTER_DEFAULT,
+    ));
+    let setup_location_usersel = Rc::new(gtk4::CheckButton::with_label(
+        lang::text::setup::WELCOME_MASTER_OTHER,
+    ));
     setup_location_defsel.set_group(Some(setup_location_usersel.as_ref()));
     setup_location_defsel.set_active(true);
 
@@ -1322,7 +1390,7 @@ pub fn baseaes_setup(
 
     let setup_location_userbox = Rc::new(gtk4::Entry::builder().editable(false).build());
     setup_grid.attach(setup_location_userbox.as_ref(), 1, 6, 2, 1);
-    let setup_location_selbtn = gtk4::Button::with_label("Select...");
+    let setup_location_selbtn = gtk4::Button::with_label(lang::text::setup::WELCOME_MASTER_SELECT);
     setup_location_selbtn.set_size_request(48, 32);
 
     let setup_window_lrc = Rc::clone(&setup_window);
@@ -1330,7 +1398,7 @@ pub fn baseaes_setup(
     setup_location_selbtn.connect_clicked(move |_| {
         let setup_mfile_seldialog = gtk4::FileDialog::builder()
             .modal(true)
-            .title("Select where to save the master vault")
+            .title(lang::text::setup::WELCOME_MASTER_SELECT_TITLE)
             .build();
         setup_mfile_seldialog.set_initial_name(Some("master.vbase"));
 
@@ -1343,8 +1411,8 @@ pub fn baseaes_setup(
                 if raw_gfile.is_err() {
                     show_alert(
                         setup_window_src.as_ref(),
-                        "Error",
-                        "Failed to open the selected file.",
+                        lang::text::generic::ERROR,
+                        lang::text::setup::WELCOME_MASTER_ERROR,
                     );
                     return;
                 }
@@ -1355,21 +1423,26 @@ pub fn baseaes_setup(
     setup_grid.attach(&setup_location_selbtn, 2, 5, 1, 1);
 
     // Master file encryption selectors etc.
-    let setup_aes_desc = gtk4::Label::new(Some("Select master file encryption:"));
+    let setup_aes_desc = gtk4::Label::new(Some(lang::text::setup::WELCOME_ENCRYPT_DESC));
     setup_grid.attach(&setup_aes_desc, 1, 7, 2, 1);
 
-    let setup_aes_selector1 = Rc::new(gtk4::CheckButton::with_label("Use included key (weaker)"));
-    let setup_aes_selector2 = Rc::new(gtk4::CheckButton::with_label("Use password (recommended)"));
+    let setup_aes_selector1 = Rc::new(gtk4::CheckButton::with_label(
+        lang::text::setup::WELCOME_ENCRYPT_DEFAULT,
+    ));
+    let setup_aes_selector2 = Rc::new(gtk4::CheckButton::with_label(
+        lang::text::setup::WELCOME_ENCRYPT_USERPW,
+    ));
     setup_aes_selector1.set_group(Some(setup_aes_selector2.as_ref()));
 
     setup_grid.attach(setup_aes_selector1.as_ref(), 1, 8, 2, 1);
     setup_grid.attach(setup_aes_selector2.as_ref(), 1, 9, 2, 1);
 
     let setup_aes_pwbox = gtk4::PasswordEntry::new();
-    setup_aes_pwbox.set_placeholder_text(Some("Enter Master password here..."));
+    setup_aes_pwbox.set_placeholder_text(Some(lang::text::setup::WELCOME_ENCRYPT_PWPH));
     setup_grid.attach(&setup_aes_pwbox, 1, 10, 2, 1);
 
-    let setup_already_done_button = gtk4::Button::with_label("I already have the master vault");
+    let setup_already_done_button =
+        gtk4::Button::with_label(lang::text::setup::WELCOME_ALREADY_DONE);
 
     let setup_window_arc = Rc::clone(&setup_window);
     let mpathlocator_arc = Rc::clone(&mpathlocator);
@@ -1388,7 +1461,7 @@ pub fn baseaes_setup(
                 if raw_gfile.is_err() {
                     show_alert(
                         setup_window_src.as_ref(),
-                        "Error",
+                        lang::text::generic::ERROR,
                         "Failed to open the selected file.",
                     );
                     return;
@@ -1413,7 +1486,7 @@ pub fn baseaes_setup(
     setup_grid.attach(&setup_already_done_button, 1, 11, 3, 1);
 
     let setup_confirm_box = gtk4::Entry::new();
-    setup_confirm_box.set_placeholder_text(Some("Enter confirm code here"));
+    setup_confirm_box.set_placeholder_text(Some(lang::text::setup::WELCOME_CONFIRM_PH));
     setup_grid.attach(&setup_confirm_box, 4, 11, 3, 1);
 
     let setup_confirm_button = gtk4::Button::with_label("OK");
@@ -1424,30 +1497,34 @@ pub fn baseaes_setup(
     setup_confirm_button.connect_clicked(move |_| {
         let use_intk = setup_aes_sel1.is_active();
         if !(use_intk || setup_aes_sel2.is_active()) {
-            show_alert(swindow_rc.as_ref(), "Alert", "Please select the encryption type.");
+            show_alert(
+                swindow_rc.as_ref(),
+                lang::text::generic::ALERT,
+                lang::text::setup::SETUP_ERROR_NOENCTYPE,
+            );
             return;
         }
         if setup_confirm_box.text() != "66550" {
             show_alert(
                 swindow_rc.as_ref(),
-                "Alert",
-                "Read PRECAUTIONS and enter the correct code.\nMake sure that the number is entered correctly.",
+                lang::text::generic::ALERT,
+                lang::text::setup::SETUP_ERROR_CONFIRM_MISMATCH,
             );
             return;
         }
         if setup_aes_sel2.is_active() && setup_aes_pwbox.text().is_empty() {
             show_alert(
                 swindow_rc.as_ref(),
-                "Alert",
-                "Master password cannot be empty.",
+                lang::text::generic::ALERT,
+                lang::text::setup::SETUP_ERROR_EMPTY_PW,
             );
             return;
         }
         if setup_location_usersel.is_active() && setup_location_userbox.text().is_empty() {
             show_alert(
                 swindow_rc.as_ref(),
-                "Alert",
-                "Please select where to save the master vault.",
+                lang::text::generic::ALERT,
+                lang::text::setup::SETUP_ERROR_EMPTY_LOCATION,
             );
             return;
         }
@@ -1460,8 +1537,8 @@ pub fn baseaes_setup(
         if mvaultpath_opt.is_none() {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to get the location to save the master vault.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_ERROR_LOCATION_FETCH_FAILED,
             );
             return;
         }
@@ -1470,8 +1547,8 @@ pub fn baseaes_setup(
         if new_mvault_res.is_err() {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to create the new master vault.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_ERROR_CREATE_NEW_FAILED,
             );
             return;
         }
@@ -1488,8 +1565,8 @@ pub fn baseaes_setup(
             None => {
                 show_alert(
                     swindow_rc.as_ref(),
-                    "Error",
-                    "Failed to initialize vault.\n('vname' encryption failed)",
+                    lang::text::generic::ERROR,
+                    lang::text::setup::SETUP_INIT_VNAME_ENC_FAILED,
                 );
                 let _ = fs::remove_file(&mvaultpath);
                 return;
@@ -1498,35 +1575,48 @@ pub fn baseaes_setup(
         if let Err(_) = bfilewriter.write(if use_intk { b"d" } else { b"u" }) {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to write 'vtype' to the buffer.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_INIT_VTYPE_BUFWRITE_FAILED,
             );
+            let _ = fs::remove_file(&mvaultpath);
+            return;
         };
         if let Err(_) = bfilewriter.write(&vname.0) {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to write 'vname-nonce' to the buffer.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_INIT_VNNONCE_BUFWRITE_FAILED,
             );
+            let _ = fs::remove_file(&mvaultpath);
+            return;
         };
         let vname_cilen = vname.1.len() as u32;
         if let Err(_) = bfilewriter.write(&vname_cilen.to_le_bytes()) {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to write 'vname-cipher-length' to the buffer.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_INIT_VNCLEN_BUFWRITE_FAILED,
             );
+            let _ = fs::remove_file(&mvaultpath);
+            return;
         };
         if let Err(_) = bfilewriter.write(&vname.1) {
             show_alert(
                 swindow_rc.as_ref(),
-                "Error",
-                "Failed to write 'vname-cipher' to the buffer.",
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_INIT_VNCIPHER_BUFWRITE_FAILED,
             );
+            let _ = fs::remove_file(&mvaultpath);
+            return;
         };
         if let Err(_) = bfilewriter.flush() {
-            show_alert(swindow_rc.as_ref(), "Error", "Failed to flush the buffer.");
+            show_alert(
+                swindow_rc.as_ref(),
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_INIT_BUFFER_FLUSH_FAILED,
+            );
             let _ = fs::remove_file(&mvaultpath);
+            return;
         }
         mpathlocator_crc.set_text(&mvaultpath);
         swindow_rc.add_css_class("init_complete");
@@ -1642,7 +1732,7 @@ pub fn delete_file_confirm(
     if ofile.is_none() {
         show_alert(
             vdi_window_rc.as_ref(),
-            "Alert",
+            lang::text::generic::ALERT,
             "No file is selected.\nSelect a file you want to delete, and try again.",
         );
         return;
@@ -1662,7 +1752,7 @@ pub fn delete_file_confirm(
     if ofilename.is_none() {
         show_alert(
             vdi_window_rc.as_ref(),
-            "Error",
+            lang::text::generic::ERROR,
             "Could not find the file selected.",
         );
         return;
@@ -1714,21 +1804,21 @@ pub fn delete_file_confirm(
             (None, None) => {
                 show_alert(
                     delwindow_yrc.as_ref(),
-                    "Error",
+                    lang::text::generic::ERROR,
                     "The selected file was not found.",
                 );
             }
             (None, Some(_)) => {
                 show_alert(
                     delwindow_yrc.as_ref(),
-                    "Error",
+                    lang::text::generic::ERROR,
                     "The file was not found on index, but deletion was successful.",
                 );
             }
             (Some(_), None) => {
                 show_alert(
                     delwindow_yrc.as_ref(),
-                    "Error",
+                    lang::text::generic::ERROR,
                     "The file was found on index, but failed to delete its data.",
                 );
             }
