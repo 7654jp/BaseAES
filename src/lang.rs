@@ -85,17 +85,49 @@ pub mod text {
         pub const EXP_RENAME_NOTFOUND: &str = "Failed to find the selected item.";
         pub const EXP_MORE_CTRL: &str = "More...";
         pub const EXP_MOVE_ITEM: &str = "Move item";
+        pub const EXP_MOVE_SEL_TITLE: &str = "Select what to move...";
+        pub const EXP_MOVE_SEL_FILE: &str = "Move file";
+        pub const EXP_MOVE_SEL_DIR: &str = "Move directory";
+        pub const EXP_RELOAD_DIR: &str = "Reload";
+        pub const EXP_EXPORT_ITEM: &str = "Export file";
+        pub const EXP_EXPORT_NOSEL: &str =
+            "No file is selected.\nSelect a file you want to export, then try again.";
+        pub const EXP_EXPORT_TITLE: &str = "Export to...";
+        pub const EXP_EXPORT_GET_DATA_FAILED: &str = "Failed to get the data of the selected file.";
+        pub const EXP_EXPORT_WRITE_FAILED: &str = "Failed to export the selected file.";
+        pub const EXP_EXPORT_FLUSH_FAILED: &str = "Failed to flush the output stream.";
+        pub const EXP_DELETE_ITEM: &str = "Delete item";
+        pub const EXP_DELETE_SEL_TITLE: &str = "Select what to delete...";
+        pub const EXP_DELETE_SEL_FILE: &str = "Delete file";
+        pub const EXP_DELETE_SEL_DIR: &str = "Delete directory";
+        pub const EXP_DELETE_CONFIRM: &str = "Confirm deletion?";
+        pub const EXP_DELETE_DIR_FETCH_FAILED: &str = "Failed to get the name of current folder.";
+        pub const EXP_DELETE_DIR_DESC1: &str = "Are you sure you want to delete\nthe folder '";
+        pub const EXP_DELETE_DIR_DESC2: &str = "' and everything inside?";
+        pub const EXP_DELETE_NO_BTN: &str = "No";
+        pub const EXP_DELETE_YES_BTN: &str = "Yes";
+        pub const EXP_CLOSURE_TITLE: &str = "Save file changes?";
+        pub const EXP_CLOSURE_DESC1: &str = "Do you want to save changes in '";
+        pub const EXP_CLOSURE_DESC2: &str = "' ?";
+        pub const EXP_DONTSAVE_ITEM: &str = "Don't save";
+        pub const EXP_CLOSURE_CANCEL: &str = "Cancel";
+        pub const EXP_DISCARD_TITLE: &str = "Discard changes?";
+        pub const EXP_DISCARD_DESC: &str =
+            "There are unsaved changes.\nIf you continue, all changes will be lost.";
+        pub const EXP_DISCARD_CONT: &str = "Continue";
+        pub const EXP_DISCARD_CANCEL: &str = "Cancel";
         pub const EXP_MOVE_NOSEL: &str =
             "No file is selected.\nSelect a file you want to move and try again.";
         pub const EXP_MOVE_TITLE: &str = "Move to...";
         pub const EXP_MOVE_CONFIRM: &str = "Move";
         pub const EXP_MOVE_FINFO_ERR: &str = "Failed to get the file information.";
         pub const EXP_MOVE_FDATA_ERR: &str = "Failed to get the file data.";
-        pub const EXP_DISCARD_TITLE: &str = "Discard changes?";
-        pub const EXP_DISCARD_DESC: &str =
-            "There are unsaved changes.\nIf you continue, all changes will be lost.";
-        pub const EXP_DISCARD_CONT: &str = "Continue";
-        pub const EXP_DISCARD_CANCEL: &str = "Cancel";
+        pub const EXP_BGSF_STYLE_ERR: &str = "\nWarning: Invalid styling at line ";
+        pub const EXP_BGSF_FORMAT_ERR: &str = "\nWarning: invalid format at line ";
+        pub const EXP_BGSF_IMG_TYPE_SRY: &str = "Sorry, only PNG/JPEG Images are supported.";
+        pub const EXP_CONTENT_BIN_TITLE: &str = "  :  Binary";
+        pub const EXP_CONTENT_BIN_DESC: &str =
+            "Viewing/Editing binary file will be implemented someday.";
     }
 
     pub mod setup {
@@ -103,6 +135,21 @@ pub mod text {
         pub const WELCOME_BASEAES: &str = "Welcome to BaseAES!";
         pub const WELCOME_DESC: &str =
             "BaseAES will help keep your files safe.\nRead PRECAUTIONS before start!";
+        pub const PRECAUTIONS_TEXT: &str = concat!(
+            "1. DATA INTEGRITY\n",
+            "THIS DOES NOT GUARANTEE THAT ENCRYPTED DATA HAS NOT BEEN ALTERED. DATA TAMPERING OR CORRUPTION MAY OCCUR.\n\n",
+            "2. DATA LEGALITY\n",
+            "USERS ARE SOLELY RESPONSIBLE FOR VERIFYING AND ENSURING THAT ENCRYPTION AND THE DATA THEY COLLECT, USE, AND STORE IS LEGALLY PERMISSIBLE. THIS PROGRAM IS NOT INTENDED TO ENCOURAGE SUCH ILLEGAL ACTIVITIES.\n\n",
+            "3. ACCESS CONTROL\n",
+            "ENCRYPTION ALONE DOESN'T GUARANTEE SECURITY. PROPER ACCESS MANAGEMENT MUST BE IMPLEMENTED.\n\n",
+            "4. KEY MANAGEMENT\n",
+            "SECURELY MANAGING ENCRYPTION KEYS IS CRITICALLY IMPORTANT. IF A KEY IS COMPROMISED, DATA CONFIDENTIALITY WILL BE LOST.\n\n",
+            "5. DATA RECOVERY IMPOSSIBILITY\n",
+            "LOSING AN ENCRYPTION KEY WILL MAKE YOUR ENCRYPTED DATA INACCESSIBLE. SINCE IT CANNOT BE RECOVERED, THIS IS A SIGNIFICANT RISK FOR IMPORTANT DATA.\n\n",
+            "6. USER AGREEMENT\n",
+            "USERS MUST ACKNOWLEDGE AND ACCEPT THE RISKS ASSOCIATED WITH USING THIS PROGRAM IN ADVANCE.\n\n\n",
+            "IF YOU AGREE TO THE PRECAUTIONS ABOVE, Enter the number '66550' below to complete the setup."
+        );
         pub const WELCOME_MASTER_WILL_BE: &str = "Master vault will be saved at:";
         pub const WELCOME_MASTER_DEFAULT: &str = "Default location";
         pub const WELCOME_MASTER_OTHER: &str = "Other place";
@@ -152,6 +199,10 @@ pub mod text {
         pub const DIRNAME_FIRST_WAS_SPACE: &str = "Folder name cannot start with ' '.";
         pub const DIRNAME_ILLEGAL_ENDING: &str = "Folder name cannot end with ' ' or '.'.";
         pub const DIRNAME_EMPTY: &str = "Folder name cannot be empty.";
+        pub const BGSF_NOFILE: &str = "\nWarning: The file doesn't exist at line ";
+        pub const BGSF_TEXT_PARSE_FAILED: &str =
+            "Failed to read data as text. Data does exist but we're not able to show it.";
+        pub const BGSF_PATH_ERR: &str = "\nWarning: Invalid path at line ";
         pub const OPEN_MAST_FAILED: &str = "Failed to open the master vault.";
         pub const AES_ENCRYPT_INIT_FAILED: &str = "Failed to initialize encryption. Aborting.";
         pub const AES_ENCRYPT_NONCEGEN_FAILED: &str = "Failed to generate nonce. Aborting.";
@@ -189,10 +240,25 @@ pub mod text {
             "Failed to read 'vname-cipher' to be copied.";
         pub const DELETE_VAULT_CONF_TITLE: &str = "Confirm deletion";
         pub const DELETE_VAULT_CONF_DESC: &str = "Enter Vault password to confirm:";
+        pub const MAST_VAULT_DEC_FAILED: &str = "Failed to decrypt master vault.";
+        pub const MAST_VAULT_UDEC_FAILED: &str =
+            "Failed to decrypt master vault.\nThe password might be incorrect.";
+        pub const SAVE_VAULT_TITLE: &str = "Save changes?";
+        pub const SAVE_VAULT_DESC1: &str = "Do you want to save change(s) in the Vault '";
+        pub const SAVE_VAULT_DESC2: &str = "' ?";
+        pub const EXP_DELETE_NOSEL: &str =
+            "No file is selected.\nSelect a file you want to delete, and try again.";
+        pub const EXP_DELETE_FILE_DESC1: &str = "Are you sure you want to delete '";
+        pub const EXP_DELETE_FILE_DESC2: &str = "' ?";
+        pub const EXP_DELETE_NOT_FOUND: &str = "The selected file was not found.";
+        pub const EXP_DELETE_INDEX_NF: &str =
+            "The index of the file was not found, but the deletion of its data was successful.";
+        pub const EXP_DELETE_DATA_NF: &str =
+            "The index of the file is deleted, but failed to find its data.";
     }
 }
 
-#[cfg(feature = "lang_jp")]
+#[cfg(feature = "lang_ja")]
 pub mod text {
     pub mod generic {
         pub const ALERT: &str = "注意";
@@ -214,8 +280,10 @@ pub mod text {
             "  Vault ファイルシステムです。\n\n",
             "開発者: @7654jp\n\n",
             "このソフトウェアは the version 3 of the\n",
-            "  GNU General Public Licenseのもとでライセンスされています。\n",
-            "詳しくはリポジトリ内のLICENSEファイルを参照してください。"
+            "  GNU General Public Licenseのもとで\n",
+            "  ライセンスされています。\n",
+            "詳しくはリポジトリ内のLICENSEファイルを\n",
+            "  参照してください。"
         );
         pub const INFO_VIEW_REPO: &str = "リポジトリを見る (GitHub)";
 
@@ -261,7 +329,7 @@ pub mod text {
         pub const EXP_CREATE_FILE: &str = "ファイルを作成";
         pub const EXP_CREATE_TITLE: &str = "新しいファイルを作成";
         pub const EXP_CREATE_DESC: &str = "ファイル名を入力:";
-        pub const EXP_IMPORT_FILE: &str = "ファイルをインポート";
+        pub const EXP_IMPORT_FILE: &str = "インポート";
         pub const EXP_IMPORT_TITLE: &str = "インポートするファイルを選択してください";
         pub const EXP_IMPORT_OPEN_ERROR: &str = "選択されたファイルを開けませんでした。";
         pub const EXP_IMPORT_NAME_INVALID: &str =
@@ -279,22 +347,72 @@ pub mod text {
         pub const EXP_RENAME_NOTFOUND: &str = "選択されたファイルが見つかりませんでした。";
         pub const EXP_MORE_CTRL: &str = "その他";
         pub const EXP_MOVE_ITEM: &str = "ファイルを移動";
-        pub const EXP_MOVE_NOSEL: &str = "ファイルが選択されていません。\n移動したいファイルを選んでからもう一度試してください。";
-        pub const EXP_MOVE_TITLE: &str = "移動する";
-        pub const EXP_MOVE_CONFIRM: &str = "移動";
-        pub const EXP_MOVE_FINFO_ERR: &str = "ファイル情報の取得に失敗しました。";
-        pub const EXP_MOVE_FDATA_ERR: &str = "ファイルデータの取得に失敗しました。";
+        pub const EXP_MOVE_SEL_TITLE: &str = "移動するものを選択する";
+        pub const EXP_MOVE_SEL_FILE: &str = "ファイルを移動";
+        pub const EXP_MOVE_SEL_DIR: &str = "フォルダーを移動";
+        pub const EXP_RELOAD_DIR: &str = "再読み込み";
+        pub const EXP_EXPORT_ITEM: &str = "エクスポート";
+        pub const EXP_EXPORT_NOSEL: &str = "ファイルが選択されていません。\nエクスポートしたいファイルを選んでからもう一度試してください。";
+        pub const EXP_EXPORT_TITLE: &str = "エクスポート先を選択する";
+        pub const EXP_EXPORT_GET_DATA_FAILED: &str =
+            "選択されたファイルのデータを取得できませんでした。";
+        pub const EXP_EXPORT_WRITE_FAILED: &str =
+            "選択されたファイルのエクスポートに失敗しました。";
+        pub const EXP_EXPORT_FLUSH_FAILED: &str = "出力ストリームのフラッシュに失敗しました。";
+        pub const EXP_DELETE_ITEM: &str = "アイテムの削除";
+        pub const EXP_DELETE_SEL_TITLE: &str = "削除するものを選択する";
+        pub const EXP_DELETE_SEL_FILE: &str = "ファイルを削除";
+        pub const EXP_DELETE_SEL_DIR: &str = "フォルダーを削除";
+        pub const EXP_DELETE_CONFIRM: &str = "本当に削除しますか？";
+        pub const EXP_DELETE_DIR_FETCH_FAILED: &str = "フォルダー名の取得に失敗しました。";
+        pub const EXP_DELETE_DIR_DESC1: &str = "本当に '";
+        pub const EXP_DELETE_DIR_DESC2: &str =
+            "' フォルダーと\n中のすべての項目を削除したいですか？";
+        pub const EXP_DELETE_NO_BTN: &str = "いいえ";
+        pub const EXP_DELETE_YES_BTN: &str = "はい";
+        pub const EXP_CLOSURE_TITLE: &str = "変更を保存しますか？";
+        pub const EXP_CLOSURE_DESC1: &str = "'";
+        pub const EXP_CLOSURE_DESC2: &str = "'の変更を保存しますか？";
+        pub const EXP_DONTSAVE_ITEM: &str = "保存しない";
+        pub const EXP_CLOSURE_CANCEL: &str = "キャンセル";
         pub const EXP_DISCARD_TITLE: &str = "変更を破棄しますか？";
         pub const EXP_DISCARD_DESC: &str =
             "保存されていない変更があります。\nこのまま続けた場合、変更は全て破棄されます。";
         pub const EXP_DISCARD_CONT: &str = "続ける";
         pub const EXP_DISCARD_CANCEL: &str = "キャンセル";
+        pub const EXP_MOVE_NOSEL: &str = "ファイルが選択されていません。\n移動したいファイルを選んでからもう一度試してください。";
+        pub const EXP_MOVE_TITLE: &str = "移動する";
+        pub const EXP_MOVE_CONFIRM: &str = "移動";
+        pub const EXP_MOVE_FINFO_ERR: &str = "ファイル情報の取得に失敗しました。";
+        pub const EXP_MOVE_FDATA_ERR: &str = "ファイルデータの取得に失敗しました。";
+        pub const EXP_BGSF_STYLE_ERR: &str = "\n警告: 無効なスタイリングがあります。行 ";
+        pub const EXP_BGSF_FORMAT_ERR: &str = "\n警告: 無効なフォーマットがあります。行 ";
+        pub const EXP_BGSF_IMG_TYPE_SRY: &str =
+            "すみません、PNGとJPEG画像しかサポートしていません。";
+        pub const EXP_CONTENT_BIN_TITLE: &str = "  :  バイナリ";
+        pub const EXP_CONTENT_BIN_DESC: &str =
+            "バイナリファイルの閲覧・編集機能はいつか実装されます。";
     }
 
     pub mod setup {
         pub const WELCOME_TITLE: &str = "BaseAES セットアップ";
         pub const WELCOME_BASEAES: &str = "BaseAESへようこそ！";
         pub const WELCOME_DESC: &str = "BaseAESであなたのファイルを安全に保ちましょう。\n使用前の注意を読んでから使ってください！";
+        pub const PRECAUTIONS_TEXT: &str = concat!(
+            "1. データ完全性\n",
+            "このアプリケーション（以下、アプリ）は暗号化されたデータが改変されていないことを保証するものではありません。 データの改ざんや破損が発生する可能性があります。\n\n",
+            "2. データの合法性\n",
+            "このアプリの利用者は暗号化の行為や取得、利用、保存するデータが法律に違反しないことを自己の責任で確認する必要があります。 このアプリにはその行為について一切加担する意図はありません。\n\n",
+            "3. アクセス管理\n",
+            "暗号化だけでは安全を保証できません。 適切なアクセス管理も導入される必要があります。\n\n",
+            "4. 暗号化キー管理\n",
+            "暗号化キーを安全に管理することが極めて重要です。 暗号化キーが漏洩した場合、データの機密性は失われます。\n\n",
+            "5. データ復元の不可能性\n",
+            "暗号化キーを失うと暗号化されたデータにアクセスすることが出来なくなります。 復元方法は存在しないため、これは重要なデータを保存する目的には大きなリスクとなります。\n\n",
+            "6. ユーザー同意\n",
+            "利用者はこのアプリを使用する際に発生するリスクを理解し、許容しなければなりません。\n\n\n",
+            "以上の使用前の注意に同意する場合、'66550'を下の欄に入力してセットアップを完了してください。"
+        );
         pub const WELCOME_MASTER_WILL_BE: &str = "マスター金庫の保存先は:";
         pub const WELCOME_MASTER_DEFAULT: &str = "デフォルトの場所";
         pub const WELCOME_MASTER_OTHER: &str = "その他の場所";
@@ -345,6 +463,9 @@ pub mod text {
         pub const DIRNAME_ILLEGAL_ENDING: &str =
             "フォルダー名は ' ' か '.' で終わることはできません。";
         pub const DIRNAME_EMPTY: &str = "フォルダー名は空にできません。";
+        pub const BGSF_NOFILE: &str = "\n警告: 指定されたファイルは存在しません。行 ";
+        pub const BGSF_TEXT_PARSE_FAILED: &str = "データをテキストとして読み込めませんでした。 データは存在しますが表示できませんでした。";
+        pub const BGSF_PATH_ERR: &str = "\n警告: 無効なパスがあります。行 ";
         pub const OPEN_MAST_FAILED: &str = "マスター金庫を開けませんでした。";
         pub const AES_ENCRYPT_INIT_FAILED: &str =
             "暗号化のセットアップに失敗しました。タスクは中止されました。";
@@ -385,5 +506,19 @@ pub mod text {
         pub const UPDATE_MAST_VNAME_COPY_FAILED: &str = "'vname-cipher'の読み取りに失敗しました。";
         pub const DELETE_VAULT_CONF_TITLE: &str = "削除の確認";
         pub const DELETE_VAULT_CONF_DESC: &str = "Vaultのパスワードを入力して承認してください:";
+        pub const MAST_VAULT_DEC_FAILED: &str = "マスター金庫の復号に失敗しました。";
+        pub const MAST_VAULT_UDEC_FAILED: &str =
+            "マスター金庫の復号に失敗しました。\nパスワードが間違っている可能性があります。";
+        pub const SAVE_VAULT_TITLE: &str = "変更を保存しますか？";
+        pub const SAVE_VAULT_DESC1: &str = "Vault '";
+        pub const SAVE_VAULT_DESC2: &str = "' での変更を保存しますか？";
+        pub const EXP_DELETE_NOSEL: &str = "ファイルが選択されていません。\n削除したいファイルを選んでからもう一度試してください。";
+        pub const EXP_DELETE_FILE_DESC1: &str = "本当に '";
+        pub const EXP_DELETE_FILE_DESC2: &str = "' を削除しますか？";
+        pub const EXP_DELETE_NOT_FOUND: &str = "選択されたファイルが見つかりませんでした。";
+        pub const EXP_DELETE_INDEX_NF: &str =
+            "ファイルのインデックスは見つかりませんでしたが、データの削除は成功しました。";
+        pub const EXP_DELETE_DATA_NF: &str =
+            "ファイルのインデックスは見つかりましたが、データの削除に失敗しました。";
     }
 }

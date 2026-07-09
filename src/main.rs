@@ -96,13 +96,26 @@ fn open_main(application: &gtk4::Application) {
 
     // Enable CSS
     if let Some(display) = gdk::Display::default() {
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_data(include_str!("fstyle.css"));
-        gtk4::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
+        #[cfg(feature = "lang_en")]
+        {
+            let provider = gtk4::CssProvider::new();
+            provider.load_from_data(include_str!("fstyle.css"));
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+        #[cfg(feature = "lang_ja")]
+        {
+            let provider_ja = gtk4::CssProvider::new();
+            provider_ja.load_from_data(include_str!("fstyle_ja.css"));
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &provider_ja,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
     } else {
         show_alert(
             window.as_ref(),

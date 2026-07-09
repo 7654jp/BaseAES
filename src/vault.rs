@@ -6,6 +6,8 @@
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -489,33 +491,15 @@ fn open_vault(
             }
 
             vcf_window_rcf2.close();
-
-            if !iviewer_title_rcf2.borrow().text().ends_with("*") {
-                let fileid = PathBuf::from(ipath_rc.as_ref());
-                let title = match vindex_rcf2.borrow().get(&fileid) {
-                    Some(s) => s.to_owned(),
-                    None => return,
-                };
-                let data = match vdata_rcf2.borrow().get(&fileid) {
-                    Some(d) => d.to_owned(),
-                    None => return,
-                };
-                iviewer_rcf2.set_child(Some(
-                    get_item_viewer_grid(
-                        &title,
-                        &data,
-                        Rc::clone(&vindex_rcf2),
-                        Rc::clone(&vdata_rcf2),
-                        Rc::clone(&iviewer_title_rcf2),
-                        Rc::clone(&idcs_rcf2),
-                    )
-                    .as_ref(),
-                ));
-
-                iviewer_title_rcf2
-                    .borrow_mut()
-                    .set_itext(format!("{}:{title}^", ipath_rc.as_ref()));
-            }
+            open_other_file(
+                Rc::clone(&app_rcf2),
+                Rc::clone(&iviewer_rcf2),
+                Rc::clone(&iviewer_title_rcf2),
+                Rc::clone(&vindex_rcf2),
+                Rc::clone(&vdata_rcf2),
+                ipath_rc,
+                Rc::clone(&idcs_rcf2),
+            );
         });
         vcf_grid.attach(&vcf_ok_button, 2, 2, 1, 1);
 
@@ -670,6 +654,150 @@ fn open_vault(
         );
     });
     vaf_vbox.append(&vaf_importb);
+
+    let vaf_b64importb = gtk4::Button::with_label("Import from Base64");
+    vaf_importb.set_size_request(96, 40);
+
+    // Rc suffix: _rib
+    let iviewer_title_rib = Rc::clone(&item_viewer_title);
+    let vfilelist_rib = Rc::clone(&vault_file_list);
+    let vexpath_rib = Rc::clone(&vexplorer_path);
+    let iviewer_rib = Rc::clone(&item_viewer);
+    let popover_rib = Rc::clone(&vaf_popover);
+    let changed_rib = Rc::clone(&changed);
+    let app_rib = Rc::clone(&application);
+    let vindex_rib = Rc::clone(&vindex);
+    let vdata_rib = Rc::clone(&vdata);
+    let idcs_rib = Rc::clone(&idcs);
+    vaf_b64importb.connect_clicked(move |_| {
+        popover_rib.popdown();
+        let b64input_window = Rc::new(gtk4::Window::new());
+        b64input_window.set_application(Some(app_rib.as_ref()));
+        b64input_window.set_title(Some("Import from Base64"));
+        b64input_window.set_default_size(320, 64);
+        b64input_window.set_modal(true);
+
+        let b64input_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+
+        let b64input_fntitle = gtk4::Label::new(Some("Enter file name:"));
+        b64input_grid.attach(&b64input_fntitle, 1, 1, 1, 1);
+
+        let b64input_filename = gtk4::Entry::new();
+        b64input_filename.set_size_request(160, 28);
+        b64input_grid.attach(&b64input_filename, 2, 1, 3, 1);
+
+        let b64input_b64title = gtk4::Label::new(Some("Enter Base64 below:"));
+        b64input_grid.attach(&b64input_b64title, 1, 2, 1, 1);
+
+        let b64input_entry = gtk4::Entry::new();
+        b64input_grid.attach(&b64input_entry, 1, 3, 4, 1);
+
+        let b64input_desc = gtk4::Label::new(Some(
+            "This prompt support:\nRaw Base64 (E.g. TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (E.g. data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)",
+        ));
+        b64input_grid.attach(&b64input_desc, 1, 4, 3, 3);
+
+        let b64input_okbtn = gtk4::Button::with_label("OK");
+
+        // Rc suffix: _rib2
+        let changed_rib2 = Rc::clone(&changed_rib);
+        let vindex_rib2 = Rc::clone(&vindex_rib);
+        let vdata_rib2 = Rc::clone(&vdata_rib);
+        let idcs_rib2 = Rc::clone(&idcs_rib);
+        let app_rib2 = Rc::clone(&app_rib);
+        let iviewer_title_rib2 = Rc::clone(&iviewer_title_rib);
+        let b64window_rib2 = Rc::clone(&b64input_window);
+        let vfilelist_rib2 = Rc::clone(&vfilelist_rib);
+        let iviewer_rib2 = Rc::clone(&iviewer_rib);
+        let vexpath_rib2 = Rc::clone(&vexpath_rib);
+        b64input_okbtn.connect_clicked(move |_| {
+            let text = b64input_entry.text();
+            let b64bin_res = BASE64_STANDARD.decode(if text.contains(",") {
+                text.rsplit_once(",").unwrap().1
+            } else {
+                &text
+            });
+            if let Ok(b64bin) = b64bin_res {
+                // File name filtering
+                let filename = b64input_filename.text().to_string();
+                if let Err(emsg) = filename_check(&filename) {
+                    show_alert(b64window_rib2.as_ref(), "Error", &emsg);
+                    return;
+                }
+
+                // Filename duplication check
+                let vpath = vexpath_rib2.borrow().get_itext().to_owned();
+                for (ipath, name) in &*vindex_rib2.borrow() {
+                    if !ipath.starts_with(&vpath) {
+                        continue;
+                    }
+                    // Exclude subdirectory here
+                    if ipath.parent().unwrap_or(&PathBuf::from("/")) != &vpath {
+                        continue;
+                    }
+
+                    if name == &filename {
+                        show_alert(
+                            b64window_rib2.as_ref(),
+                            "Alert",
+                            "The filename cannot be the same.",
+                        );
+                        return;
+                    }
+                }
+
+                // Append file info
+                let ipath_rc = Rc::new(vault_append_file(
+                    Rc::clone(&vexpath_rib2),
+                    filename,
+                    Some(&b64bin),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                ));
+                changed_rib2.borrow_mut().set(true);
+                b64window_rib2.close();
+
+                // Reload file
+                loop {
+                    let dwidget = match vfilelist_rib2.last_child() {
+                        Some(w) => w,
+                        None => break,
+                    };
+                    vfilelist_rib2.remove(&dwidget);
+                }
+                for button in get_files_from_vpath(
+                    Rc::clone(&app_rib2),
+                    Rc::clone(&vfilelist_rib2),
+                    Rc::clone(&idcs_rib2),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                    PathBuf::from(vexpath_rib2.borrow().get_itext()),
+                    Rc::clone(&iviewer_title_rib2),
+                    Rc::clone(&iviewer_rib2),
+                    Rc::clone(&vexpath_rib2),
+                ) {
+                    vfilelist_rib2.append(&*button);
+                }
+
+                open_other_file(
+                    Rc::clone(&app_rib2),
+                    Rc::clone(&iviewer_rib2),
+                    Rc::clone(&iviewer_title_rib2),
+                    Rc::clone(&vindex_rib2),
+                    Rc::clone(&vdata_rib2),
+                    ipath_rc,
+                    Rc::clone(&idcs_rib2)
+                );
+            } else {
+                show_alert(b64window_rib2.as_ref(), "Error", "Failed to parse Base64 text.");
+            }
+        });
+        b64input_grid.attach(&b64input_okbtn, 4, 4, 1, 1);
+
+        b64input_window.set_child(Some(&b64input_grid));
+        b64input_window.present();
+    });
+    vaf_vbox.append(&vaf_b64importb);
 
     vaf_popover.set_child(Some(&vaf_vbox));
     vault_add_file.set_popover(Some(vaf_popover.as_ref()));
@@ -976,320 +1104,34 @@ fn open_vault(
     voc_move_item.connect_clicked(move |_| {
         voc_button_rom.popdown();
         if vexpath_rom.borrow().text() == "/" {
-            // Move file only
-            let mut fileinfo = iviewer_title_rom.borrow().get_itext().to_owned();
-            if fileinfo.ends_with("^") {
-                fileinfo.pop();
-            }
-            let (fileid_str, filename) = match fileinfo.split_once(":") {
-                Some((id, name)) => (id.to_owned(), name.to_owned()),
-                None => {
-                    voc_button_rom.popdown();
-                    show_alert(
-                        vwindow_rom.as_ref(),
-                        lang::text::generic::ALERT,
-                        lang::text::explorer::EXP_MOVE_NOSEL,
-                    );
-                    return;
-                }
-            };
-
-            let imove_window = Rc::new(gtk4::Window::new());
-            imove_window.set_title(Some(lang::text::explorer::EXP_MOVE_TITLE));
-            imove_window.set_application(Some(app_rom.as_ref()));
-            imove_window.set_size_request(240, 400);
-
-            let imove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-            imove_grid.set_halign(gtk4::Align::Center);
-
-            // Path viewer
-            let imove_expathi = gtk4::Entry::builder().text("/").editable(false).build();
-            imove_expathi.add_css_class("normal");
-            imove_expathi.set_size_request(240, 40);
-            let imove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
-                imove_expathi,
-                "/".to_owned(),
-            )));
-            imove_grid.attach(&**imove_expath.borrow(), 1, 1, 1, 1);
-
-            // Move confirm button
-            let imove_cfbutton = gtk4::Button::with_label(lang::text::explorer::EXP_MOVE_CONFIRM);
-            imove_cfbutton.add_css_class("normal");
-            imove_cfbutton.set_size_request(80, 40);
-
-            // Rc suffix: _romi
-            let changed_romi = Rc::clone(&changed_rom);
-            let vindex_romi = Rc::clone(&vindex_rom);
-            let vdata_romi = Rc::clone(&vdata_rom);
-            let idcs_romi = Rc::clone(&idcs_rom);
-            let app_romi = Rc::clone(&app_rom);
-            let iviewer_title_romi = Rc::clone(&iviewer_title_rom);
-            let vfilelist_romi = Rc::clone(&vfilelist_rom);
-            let iviewer_romi = Rc::clone(&iviewer_rom);
-            let vexpath_romi = Rc::clone(&vexpath_rom);
-            let imwindow_rc = Rc::clone(&imove_window);
-            let iexpath_rc = Rc::clone(&imove_expath);
-            imove_cfbutton.connect_clicked(move |_| {
-                let (curr_ipath, name) =
-                    match iviewer_title_romi.borrow().get_itext().split_once(":") {
-                        Some((cipath_s, name_s)) => (cipath_s.to_owned(), name_s.to_owned()),
-                        None => {
-                            show_alert(
-                                imwindow_rc.as_ref(),
-                                lang::text::generic::ERROR,
-                                lang::text::explorer::EXP_MOVE_FINFO_ERR,
-                            );
-                            return;
-                        }
-                    };
-                let fdata = match vdata_romi.borrow().get(&PathBuf::from(curr_ipath)) {
-                    Some(d) => d.to_owned(),
-                    None => {
-                        show_alert(
-                            imwindow_rc.as_ref(),
-                            lang::text::generic::ERROR,
-                            lang::text::explorer::EXP_MOVE_FDATA_ERR,
-                        );
-                        return;
-                    }
-                };
-                let new_ipath = vault_append_file(
-                    Rc::clone(&iexpath_rc),
-                    filename.clone(),
-                    Some(&fdata),
-                    Rc::clone(&vindex_romi),
-                    Rc::clone(&vdata_romi),
-                );
-                changed_romi.borrow_mut().set(true);
-                iviewer_title_romi
-                    .borrow_mut()
-                    .set_itext(new_ipath + ":" + &name);
-
-                let fileid = PathBuf::from(&fileid_str);
-                vindex_romi.borrow_mut().remove(&fileid);
-                vindex_romi.borrow_mut().remove(&fileid);
-
-                loop {
-                    let dwidget = match vfilelist_romi.last_child() {
-                        Some(w) => w,
-                        None => break,
-                    };
-                    vfilelist_romi.remove(&dwidget);
-                }
-                for button in get_files_from_vpath(
-                    Rc::clone(&app_romi),
-                    Rc::clone(&vfilelist_romi),
-                    Rc::clone(&idcs_romi),
-                    Rc::clone(&vindex_romi),
-                    Rc::clone(&vdata_romi),
-                    PathBuf::from(vexpath_romi.borrow().get_itext()),
-                    Rc::clone(&iviewer_title_romi),
-                    Rc::clone(&iviewer_romi),
-                    Rc::clone(&vexpath_romi),
-                ) {
-                    vfilelist_romi.append(&*button);
-                }
-
-                imwindow_rc.close();
-            });
-            imove_grid.attach(&imove_cfbutton, 2, 1, 1, 1);
-
-            // Item list
-            let imove_fwindow = gtk4::ScrolledWindow::builder()
-                .hscrollbar_policy(gtk4::PolicyType::Automatic)
-                .vscrollbar_policy(gtk4::PolicyType::Automatic)
-                .vexpand(true)
-                .build();
-            imove_fwindow.set_size_request(240, 280);
-            let imove_fviewer = Rc::new(gtk4::ListBox::new());
-            imove_fwindow.set_child(Some(imove_fviewer.as_ref()));
-            imove_grid.attach(&imove_fwindow, 1, 2, 2, 1);
-
-            for button in get_files_from_mpath(
+            vault_move_file(
                 Rc::clone(&app_rom),
-                Rc::clone(&imove_fviewer),
+                Rc::clone(&idcs_rom),
+                Rc::clone(&changed_rom),
                 Rc::clone(&vindex_rom),
                 Rc::clone(&vdata_rom),
-                PathBuf::from("/"),
-                Rc::clone(&imove_expath),
-            ) {
-                imove_fviewer.append(&*button);
-            }
-
-            imove_window.set_child(Some(&imove_grid));
-            imove_window.set_modal(true);
-            imove_window.present();
+                Rc::clone(&vwindow_rom),
+                Rc::clone(&vfilelist_rom),
+                Rc::clone(&iviewer_rom),
+                Rc::clone(&vexpath_rom),
+                Rc::clone(&iviewer_title_rom),
+            );
         } else if iviewer_title_rom.borrow().get_itext() == "" {
-            // Move dir
-            let dmove_window = Rc::new(gtk4::Window::new());
-            dmove_window.set_title(Some("Move to..."));
-            dmove_window.set_application(Some(app_rom.as_ref()));
-            dmove_window.set_size_request(240, 400);
-
-            let dmove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-            dmove_grid.set_halign(gtk4::Align::Center);
-
-            // Path viewer
-            let mut parent = PathBuf::from(vexpath_rom.borrow().text());
-            parent.pop();
-            let dmove_expathi = gtk4::Entry::builder()
-                .text(parent.display().to_string())
-                .editable(false)
-                .build();
-            dmove_expathi.add_css_class("normal");
-            dmove_expathi.set_size_request(240, 40);
-
-            parent = PathBuf::from(vexpath_rom.borrow().get_itext());
-            parent.pop();
-            let dmove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
-                dmove_expathi,
-                parent.display().to_string(),
-            )));
-            dmove_grid.attach(&**dmove_expath.borrow(), 1, 1, 1, 1);
-
-            // Move confirm button
-            let dmove_cfbutton = gtk4::Button::with_label("Move");
-            dmove_cfbutton.add_css_class("normal");
-            dmove_cfbutton.set_size_request(80, 40);
-
-            // Rc suffix: _romd
-            let changed_romd = Rc::clone(&changed_rom);
-            let vindex_romd = Rc::clone(&vindex_rom);
-            let vdata_romd = Rc::clone(&vdata_rom);
-            let idcs_romd = Rc::clone(&idcs_rom);
-            let app_romd = Rc::clone(&app_rom);
-            let iviewer_title_romd = Rc::clone(&iviewer_title_rom);
-            let vfilelist_romd = Rc::clone(&vfilelist_rom);
-            let iviewer_romd = Rc::clone(&iviewer_rom);
-            let vexpath_romd = Rc::clone(&vexpath_rom);
-            let dmwindow_rc = Rc::clone(&dmove_window);
-            let dexpath_rc = Rc::clone(&dmove_expath);
-            dmove_cfbutton.connect_clicked(move |_| {
-                let from_path = vexpath_romd.borrow().get_itext().clone();
-                if &from_path == dexpath_rc.borrow().get_itext() {
-                    dmwindow_rc.close();
-                    return;
-                }
-                let mut dirpath = vexpath_romd.borrow().text().to_string();
-                dirpath.pop();
-                let dirname = dirpath.rsplit_once("/").unwrap().1.to_owned() + "/";
-
-                let new_ipath =
-                    vault_append_folder(Rc::clone(&dexpath_rc), dirname, Rc::clone(&vindex_romd));
-                dexpath_rc.borrow_mut().set_itext(new_ipath);
-
-                // Search for the file to copy
-                // We can't actually copy it inside this loop,
-                // because the loop itself requires vindex to be borrowed
-                let mut copylist: Vec<(PathBuf, String)> = Vec::new();
-                for (spath, sname) in &*vindex_romd.borrow() {
-                    if !spath.starts_with(&from_path) {
-                        continue;
-                    }
-                    // Exclude subdirectory here
-                    if spath.parent().unwrap_or(&PathBuf::from("/")) != &from_path {
-                        continue;
-                    }
-
-                    copylist.push((spath.to_owned(), sname.clone()));
-                }
-
-                // Do the actual copy
-                for (ipath_str, name) in copylist {
-                    let ipath = PathBuf::from(ipath_str);
-                    let fdata = match vdata_romd.borrow().get(&ipath) {
-                        Some(d) => d.to_owned(),
-                        None => {
-                            show_alert(
-                                dmwindow_rc.as_ref(),
-                                lang::text::generic::ERROR,
-                                "Failed to get file data to copy.",
-                            );
-                            return;
-                        }
-                    };
-                    vault_append_file(
-                        Rc::clone(&dexpath_rc),
-                        name.clone(),
-                        Some(&fdata),
-                        Rc::clone(&vindex_romd),
-                        Rc::clone(&vdata_romd),
-                    );
-
-                    vindex_romd.borrow_mut().remove(&ipath);
-                    vindex_romd.borrow_mut().remove(&ipath);
-                }
-
-                // Remove the origin folder
-                let mut from_pb = PathBuf::from(from_path);
-                vindex_romd.borrow_mut().remove(&from_pb);
-                changed_romd.borrow_mut().set(true);
-
-                // Go up to the existing folder
-                let mut showpath = PathBuf::from(vexpath_romd.borrow().text());
-                showpath.pop();
-                vexpath_romd
-                    .borrow_mut()
-                    .set_text(&showpath.display().to_string());
-                from_pb.pop();
-                vexpath_romd
-                    .borrow_mut()
-                    .set_itext(from_pb.display().to_string());
-
-                loop {
-                    let dwidget = match vfilelist_romd.last_child() {
-                        Some(w) => w,
-                        None => break,
-                    };
-                    vfilelist_romd.remove(&dwidget);
-                }
-                for button in get_files_from_vpath(
-                    Rc::clone(&app_romd),
-                    Rc::clone(&vfilelist_romd),
-                    Rc::clone(&idcs_romd),
-                    Rc::clone(&vindex_romd),
-                    Rc::clone(&vdata_romd),
-                    from_pb,
-                    Rc::clone(&iviewer_title_romd),
-                    Rc::clone(&iviewer_romd),
-                    Rc::clone(&vexpath_romd),
-                ) {
-                    vfilelist_romd.append(&*button);
-                }
-
-                dmwindow_rc.close();
-            });
-            dmove_grid.attach(&dmove_cfbutton, 2, 1, 1, 1);
-
-            // Item list
-            let dmove_fwindow = gtk4::ScrolledWindow::builder()
-                .hscrollbar_policy(gtk4::PolicyType::Automatic)
-                .vscrollbar_policy(gtk4::PolicyType::Automatic)
-                .vexpand(true)
-                .build();
-            dmove_fwindow.set_size_request(240, 280);
-            let dmove_fviewer = Rc::new(gtk4::ListBox::new());
-            dmove_fwindow.set_child(Some(dmove_fviewer.as_ref()));
-            dmove_grid.attach(&dmove_fwindow, 1, 2, 2, 1);
-
-            for button in get_files_from_mpath(
+            vault_move_dir(
                 Rc::clone(&app_rom),
-                Rc::clone(&dmove_fviewer),
+                Rc::clone(&idcs_rom),
+                Rc::clone(&changed_rom),
                 Rc::clone(&vindex_rom),
                 Rc::clone(&vdata_rom),
-                PathBuf::from(dmove_expath.borrow().get_itext()),
-                Rc::clone(&dmove_expath),
-            ) {
-                dmove_fviewer.append(&*button);
-            }
-
-            dmove_window.set_child(Some(&dmove_grid));
-            dmove_window.set_modal(true);
-            dmove_window.present();
+                Rc::clone(&vfilelist_rom),
+                Rc::clone(&iviewer_rom),
+                Rc::clone(&vexpath_rom),
+                Rc::clone(&iviewer_title_rom),
+            );
         } else {
-            // Move file or dir
+            // Not sure the user wants to move file or dir
             let vmi_window = Rc::new(gtk4::Window::new());
-            vmi_window.set_title(Some("Select what to move..."));
+            vmi_window.set_title(Some(lang::text::explorer::EXP_MOVE_SEL_TITLE));
             vmi_window.set_application(Some(app_rom.as_ref()));
             vmi_window.set_size_request(224, 56);
             vmi_window.set_resizable(false);
@@ -1303,7 +1145,7 @@ fn open_vault(
                 .spacing(6)
                 .build();
 
-            let vmi_mfile = gtk4::Button::with_label("Move file");
+            let vmi_mfile = gtk4::Button::with_label(lang::text::explorer::EXP_MOVE_SEL_FILE);
             vmi_mfile.set_size_request(96, 40);
 
             // Rc suffix: _romsf
@@ -1319,157 +1161,23 @@ fn open_vault(
             let vexpath_romsf = Rc::clone(&vexpath_rom);
             let iviewer_romsf = Rc::clone(&iviewer_rom);
             vmi_mfile.connect_clicked(move |_| {
-                // Move file
                 vmi_window_romsf.close();
-
-                let mut fileinfo = iviewer_title_romsf.borrow().get_itext().to_owned();
-                if fileinfo.ends_with("^") {
-                    fileinfo.pop();
-                }
-                let (fileid_str, filename) = match fileinfo.split_once(":") {
-                    Some((id, name)) => (id.to_owned(), name.to_owned()),
-                    None => {
-                        show_alert(
-                            vwindow_romsf.as_ref(),
-                            lang::text::generic::ERROR,
-                            "No file is selected.\nSelect a file you want to move, then try again.",
-                        );
-                        return;
-                    }
-                };
-
-                let imove_window = Rc::new(gtk4::Window::new());
-                imove_window.set_title(Some("Move to..."));
-                imove_window.set_application(Some(app_romsf.as_ref()));
-                imove_window.set_size_request(240, 400);
-
-                let imove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-                imove_grid.set_halign(gtk4::Align::Center);
-
-                // Path viewer
-                let imove_expathi = gtk4::Entry::builder()
-                    .text(vexpath_romsf.borrow().text())
-                    .editable(false)
-                    .build();
-                imove_expathi.add_css_class("normal");
-                imove_expathi.set_size_request(240, 40);
-                let imove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
-                    imove_expathi,
-                    vexpath_romsf.borrow().get_itext().to_owned(),
-                )));
-                imove_grid.attach(&**imove_expath.borrow(), 1, 1, 1, 1);
-
-                // Move confirm button
-                let imove_cfbutton = gtk4::Button::with_label("Move");
-                imove_cfbutton.add_css_class("normal");
-                imove_cfbutton.set_size_request(80, 40);
-
-                // Rc suffix: _romsfc
-                let changed_romsfc = Rc::clone(&changed_romsf);
-                let vindex_romsfc = Rc::clone(&vindex_romsf);
-                let vdata_romsfc = Rc::clone(&vdata_romsf);
-                let idcs_romsfc = Rc::clone(&idcs_romsf);
-                let app_romsfc = Rc::clone(&app_romsf);
-                let iviewer_title_romsfc = Rc::clone(&iviewer_title_romsf);
-                let vfilelist_romsfc = Rc::clone(&vfilelist_romsf);
-                let iviewer_romsfc = Rc::clone(&iviewer_romsf);
-                let vexpath_romsfc = Rc::clone(&vexpath_romsf);
-                let imwindow_rc = Rc::clone(&imove_window);
-                let iexpath_rc = Rc::clone(&imove_expath);
-                imove_cfbutton.connect_clicked(move |_| {
-                    let (curr_ipath, name) =
-                        match iviewer_title_romsfc.borrow().get_itext().split_once(":") {
-                            Some((cipath_s, name_s)) => (cipath_s.to_owned(), name_s.to_owned()),
-                            None => {
-                                show_alert(
-                                    imwindow_rc.as_ref(),
-                                    lang::text::generic::ERROR,
-                                    "Failed to get the file information.",
-                                );
-                                return;
-                            }
-                        };
-                    let fdata = match vdata_romsfc.borrow().get(&PathBuf::from(curr_ipath)) {
-                        Some(d) => d.to_owned(),
-                        None => {
-                            show_alert(
-                                imwindow_rc.as_ref(),
-                                lang::text::generic::ERROR,
-                                "Failed to get file data to copy.",
-                            );
-                            return;
-                        }
-                    };
-                    let new_ipath = vault_append_file(
-                        Rc::clone(&iexpath_rc),
-                        filename.clone(),
-                        Some(&fdata),
-                        Rc::clone(&vindex_romsfc),
-                        Rc::clone(&vdata_romsfc),
-                    );
-                    changed_romsfc.borrow_mut().set(true);
-                    iviewer_title_romsfc
-                        .borrow_mut()
-                        .set_itext(new_ipath + ":" + &name);
-
-                    let fileid = PathBuf::from(&fileid_str);
-                    vindex_romsfc.borrow_mut().remove(&fileid);
-                    vindex_romsfc.borrow_mut().remove(&fileid);
-
-                    loop {
-                        let dwidget = match vfilelist_romsfc.last_child() {
-                            Some(w) => w,
-                            None => break,
-                        };
-                        vfilelist_romsfc.remove(&dwidget);
-                    }
-                    for button in get_files_from_vpath(
-                        Rc::clone(&app_romsfc),
-                        Rc::clone(&vfilelist_romsfc),
-                        Rc::clone(&idcs_romsfc),
-                        Rc::clone(&vindex_romsfc),
-                        Rc::clone(&vdata_romsfc),
-                        PathBuf::from(vexpath_romsfc.borrow().get_itext()),
-                        Rc::clone(&iviewer_title_romsfc),
-                        Rc::clone(&iviewer_romsfc),
-                        Rc::clone(&vexpath_romsfc),
-                    ) {
-                        vfilelist_romsfc.append(&*button);
-                    }
-
-                    imwindow_rc.close();
-                });
-                imove_grid.attach(&imove_cfbutton, 2, 1, 1, 1);
-
-                // Item list
-                let imove_fwindow = gtk4::ScrolledWindow::builder()
-                    .hscrollbar_policy(gtk4::PolicyType::Automatic)
-                    .vscrollbar_policy(gtk4::PolicyType::Automatic)
-                    .vexpand(true)
-                    .build();
-                imove_fwindow.set_size_request(240, 280);
-                let imove_fviewer = Rc::new(gtk4::ListBox::new());
-                imove_fwindow.set_child(Some(imove_fviewer.as_ref()));
-                imove_grid.attach(&imove_fwindow, 1, 2, 2, 1);
-
-                for button in get_files_from_mpath(
+                vault_move_file(
                     Rc::clone(&app_romsf),
-                    Rc::clone(&imove_fviewer),
+                    Rc::clone(&idcs_romsf),
+                    Rc::clone(&changed_romsf),
                     Rc::clone(&vindex_romsf),
                     Rc::clone(&vdata_romsf),
-                    PathBuf::from(vexpath_romsf.borrow().get_itext()),
-                    Rc::clone(&imove_expath),
-                ) {
-                    imove_fviewer.append(&*button);
-                }
-
-                imove_window.set_child(Some(&imove_grid));
-                imove_window.set_modal(true);
-                imove_window.present();
+                    Rc::clone(&vwindow_romsf),
+                    Rc::clone(&vfilelist_romsf),
+                    Rc::clone(&iviewer_romsf),
+                    Rc::clone(&vexpath_romsf),
+                    Rc::clone(&iviewer_title_romsf),
+                );
             });
             vmi_hbox.append(&vmi_mfile);
 
-            let vmi_mdir = gtk4::Button::with_label("Move directory");
+            let vmi_mdir = gtk4::Button::with_label(lang::text::explorer::EXP_MOVE_SEL_DIR);
             vmi_mdir.set_size_request(96, 40);
 
             // Rc suffix: _romsd
@@ -1485,175 +1193,17 @@ fn open_vault(
             let iviewer_romsd = Rc::clone(&iviewer_rom);
             vmi_mdir.connect_clicked(move |_| {
                 vmi_window_romsd.close();
-
-                let dmove_window = Rc::new(gtk4::Window::new());
-                dmove_window.set_title(Some("Move to..."));
-                dmove_window.set_application(Some(app_romsd.as_ref()));
-                dmove_window.set_size_request(240, 400);
-
-                let dmove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
-                dmove_grid.set_halign(gtk4::Align::Center);
-
-                // Path viewer
-                let mut parent = PathBuf::from(vexpath_romsd.borrow().text());
-                parent.pop();
-                let dmove_expathi = gtk4::Entry::builder()
-                    .text(parent.display().to_string())
-                    .editable(false)
-                    .build();
-                dmove_expathi.add_css_class("normal");
-                dmove_expathi.set_size_request(240, 40);
-
-                parent = PathBuf::from(vexpath_romsd.borrow().get_itext());
-                parent.pop();
-                let dmove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
-                    dmove_expathi,
-                    parent.display().to_string(),
-                )));
-                dmove_grid.attach(&**dmove_expath.borrow(), 1, 1, 1, 1);
-
-                // Move confirm button
-                let dmove_cfbutton = gtk4::Button::with_label("Move");
-                dmove_cfbutton.add_css_class("normal");
-                dmove_cfbutton.set_size_request(80, 40);
-
-                // Rc suffix: _romsdc
-                let changed_romsdc = Rc::clone(&changed_romsd);
-                let vindex_romsdc = Rc::clone(&vindex_romsd);
-                let vdata_romsdc = Rc::clone(&vdata_romsd);
-                let idcs_romsdc = Rc::clone(&idcs_romsd);
-                let app_romsdc = Rc::clone(&app_romsd);
-                let iviewer_title_romsdc = Rc::clone(&iviewer_title_romsd);
-                let vfilelist_romsdc = Rc::clone(&vfilelist_romsd);
-                let iviewer_romsdc = Rc::clone(&iviewer_romsd);
-                let vexpath_romsdc = Rc::clone(&vexpath_romsd);
-                let dmwindow_rc = Rc::clone(&dmove_window);
-                let dexpath_rc = Rc::clone(&dmove_expath);
-                dmove_cfbutton.connect_clicked(move |_| {
-                    let from_path = vexpath_romsdc.borrow().get_itext().clone();
-                    if &from_path == dexpath_rc.borrow().get_itext() {
-                        dmwindow_rc.close();
-                        return;
-                    }
-                    let mut dirpath = vexpath_romsdc.borrow().text().to_string();
-                    dirpath.pop();
-                    let dirname = dirpath.rsplit_once("/").unwrap().1.to_owned() + "/";
-
-                    let new_ipath = vault_append_folder(
-                        Rc::clone(&dexpath_rc),
-                        dirname,
-                        Rc::clone(&vindex_romsdc),
-                    );
-                    dexpath_rc.borrow_mut().set_itext(new_ipath);
-
-                    // Search for the file to copy
-                    // We can't actually copy it inside this loop,
-                    // because the loop itself requires vindex to be borrowed
-                    let mut copylist: Vec<(PathBuf, String)> = Vec::new();
-                    for (spath, sname) in &*vindex_romsdc.borrow() {
-                        if !spath.starts_with(&from_path) {
-                            continue;
-                        }
-                        // Exclude subdirectory here
-                        if spath.parent().unwrap_or(&PathBuf::from("/")) != &from_path {
-                            continue;
-                        }
-
-                        copylist.push((spath.to_owned(), sname.clone()));
-                    }
-
-                    // Do the actual copy
-                    for (ipath, name) in copylist {
-                        let ipath = PathBuf::from(ipath);
-                        let fdata = match vdata_romsdc.borrow().get(&ipath) {
-                            Some(d) => d.to_owned(),
-                            None => {
-                                show_alert(
-                                    dmwindow_rc.as_ref(),
-                                    lang::text::generic::ERROR,
-                                    "Failed to get file data to copy.",
-                                );
-                                return;
-                            }
-                        };
-                        vault_append_file(
-                            Rc::clone(&dexpath_rc),
-                            name.clone(),
-                            Some(&fdata),
-                            Rc::clone(&vindex_romsdc),
-                            Rc::clone(&vdata_romsdc),
-                        );
-
-                        vindex_romsdc.borrow_mut().remove(&ipath);
-                        vindex_romsdc.borrow_mut().remove(&ipath);
-                    }
-
-                    // Remove the origin folder
-                    let mut from_pb = PathBuf::from(from_path);
-                    vindex_romsdc.borrow_mut().remove(&from_pb);
-                    changed_romsdc.borrow_mut().set(true);
-
-                    // Go up to the existing folder
-                    let mut showpath = PathBuf::from(vexpath_romsdc.borrow().text());
-                    showpath.pop();
-                    vexpath_romsdc
-                        .borrow_mut()
-                        .set_text(&showpath.display().to_string());
-                    from_pb.pop();
-                    vexpath_romsdc
-                        .borrow_mut()
-                        .set_itext(from_pb.display().to_string());
-
-                    loop {
-                        let dwidget = match vfilelist_romsdc.last_child() {
-                            Some(w) => w,
-                            None => break,
-                        };
-                        vfilelist_romsdc.remove(&dwidget);
-                    }
-                    for button in get_files_from_vpath(
-                        Rc::clone(&app_romsdc),
-                        Rc::clone(&vfilelist_romsdc),
-                        Rc::clone(&idcs_romsdc),
-                        Rc::clone(&vindex_romsdc),
-                        Rc::clone(&vdata_romsdc),
-                        from_pb,
-                        Rc::clone(&iviewer_title_romsdc),
-                        Rc::clone(&iviewer_romsdc),
-                        Rc::clone(&vexpath_romsdc),
-                    ) {
-                        vfilelist_romsdc.append(&*button);
-                    }
-
-                    dmwindow_rc.close();
-                });
-                dmove_grid.attach(&dmove_cfbutton, 2, 1, 1, 1);
-
-                // Item list
-                let dmove_fwindow = gtk4::ScrolledWindow::builder()
-                    .hscrollbar_policy(gtk4::PolicyType::Automatic)
-                    .vscrollbar_policy(gtk4::PolicyType::Automatic)
-                    .vexpand(true)
-                    .build();
-                dmove_fwindow.set_size_request(240, 280);
-                let dmove_fviewer = Rc::new(gtk4::ListBox::new());
-                dmove_fwindow.set_child(Some(dmove_fviewer.as_ref()));
-                dmove_grid.attach(&dmove_fwindow, 1, 2, 2, 1);
-
-                for button in get_files_from_mpath(
+                vault_move_dir(
                     Rc::clone(&app_romsd),
-                    Rc::clone(&dmove_fviewer),
+                    Rc::clone(&idcs_romsd),
+                    Rc::clone(&changed_romsd),
                     Rc::clone(&vindex_romsd),
                     Rc::clone(&vdata_romsd),
-                    PathBuf::from(dmove_expath.borrow().get_itext()),
-                    Rc::clone(&dmove_expath),
-                ) {
-                    dmove_fviewer.append(&*button);
-                }
-
-                dmove_window.set_child(Some(&dmove_grid));
-                dmove_window.set_modal(true);
-                dmove_window.present();
+                    Rc::clone(&vfilelist_romsd),
+                    Rc::clone(&iviewer_romsd),
+                    Rc::clone(&vexpath_romsd),
+                    Rc::clone(&iviewer_title_romsd),
+                );
             });
             vmi_hbox.append(&vmi_mdir);
 
@@ -1665,7 +1215,7 @@ fn open_vault(
     voc_grid.attach(&voc_move_item, 1, 1, 1, 1);
 
     // Reload
-    let voc_reload_button = gtk4::Button::with_label("Reload");
+    let voc_reload_button = gtk4::Button::with_label(lang::text::explorer::EXP_RELOAD_DIR);
     voc_reload_button.set_size_request(96, 40);
 
     // Rc suffix: _ror
@@ -1704,7 +1254,7 @@ fn open_vault(
     voc_grid.attach(&voc_reload_button, 2, 1, 1, 1);
 
     // Export
-    let voc_export_item = gtk4::Button::with_label("Export file");
+    let voc_export_item = gtk4::Button::with_label(lang::text::explorer::EXP_EXPORT_ITEM);
     voc_export_item.set_size_request(96, 40);
 
     // Rc suffix: _roe
@@ -1724,7 +1274,7 @@ fn open_vault(
                 show_alert(
                     vwindow_roe.as_ref(),
                     lang::text::generic::ERROR,
-                    "No file is selected.\nSelect a file you want to export, then try again.",
+                    lang::text::explorer::EXP_EXPORT_NOSEL,
                 );
                 return;
             }
@@ -1733,7 +1283,7 @@ fn open_vault(
         // File save window
         let file_dialog = gtk4::FileDialog::builder()
             .modal(true)
-            .title("Export to...")
+            .title(lang::text::explorer::EXP_EXPORT_TITLE)
             .build();
         file_dialog.set_initial_name(Some(title));
 
@@ -1749,7 +1299,7 @@ fn open_vault(
                     show_alert(
                         vwindow_roes.as_ref(),
                         lang::text::generic::ERROR,
-                        "Failed to open the selected file.",
+                        lang::text::explorer::EXP_IMPORT_OPEN_ERROR,
                     );
                     return;
                 }
@@ -1764,7 +1314,7 @@ fn open_vault(
                         show_alert(
                             vwindow_roes.as_ref(),
                             lang::text::generic::ERROR,
-                            "Failed to open the selected file.",
+                            lang::text::explorer::EXP_IMPORT_OPEN_ERROR,
                         );
                         return;
                     }
@@ -1777,7 +1327,7 @@ fn open_vault(
                         show_alert(
                             vwindow_roes.as_ref(),
                             lang::text::generic::ERROR,
-                            "Failed to get the data of the selected file.",
+                            lang::text::explorer::EXP_EXPORT_GET_DATA_FAILED,
                         );
                         return;
                     }
@@ -1787,7 +1337,7 @@ fn open_vault(
                     show_alert(
                         vwindow_roes.as_ref(),
                         lang::text::generic::ERROR,
-                        "Failed to export the selected file.",
+                        lang::text::explorer::EXP_EXPORT_WRITE_FAILED,
                     );
                 }
                 let fres = file.flush();
@@ -1795,7 +1345,7 @@ fn open_vault(
                     show_alert(
                         vwindow_roes.as_ref(),
                         lang::text::generic::ERROR,
-                        "Failed to flush the output stream.",
+                        lang::text::explorer::EXP_EXPORT_FLUSH_FAILED,
                     );
                 }
             },
@@ -1804,7 +1354,7 @@ fn open_vault(
     voc_grid.attach(&voc_export_item, 1, 2, 1, 1);
 
     // Delete
-    let voc_delete_item = gtk4::Button::with_label("Delete item");
+    let voc_delete_item = gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_ITEM);
     voc_delete_item.set_size_request(96, 40);
 
     // Rc suffix: _rod
@@ -1839,7 +1389,7 @@ fn open_vault(
         } else {
             // Delete type selector
             let vdi_window = Rc::new(gtk4::Window::new());
-            vdi_window.set_title(Some("Select what to delete..."));
+            vdi_window.set_title(Some(lang::text::explorer::EXP_DELETE_SEL_TITLE));
             vdi_window.set_application(Some(app_rod.as_ref()));
             vdi_window.set_size_request(224, 56);
             vdi_window.set_resizable(false);
@@ -1853,7 +1403,8 @@ fn open_vault(
                 .spacing(6)
                 .build();
 
-            let vdi_delete_file = gtk4::Button::with_label("Delete file");
+            let vdi_delete_file =
+                gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_SEL_FILE);
             vdi_delete_file.set_size_request(96, 40);
 
             // Rc suffix: _rodf
@@ -1879,12 +1430,12 @@ fn open_vault(
                     Rc::clone(&vfilelist_rodf),
                     Rc::clone(&iviewer_title_rodf),
                     Rc::clone(&changed_rodf),
-                    true
+                    true,
                 );
             });
             vdi_hbox.append(&vdi_delete_file);
 
-            let vdi_delete_dir = gtk4::Button::with_label("Delete folder");
+            let vdi_delete_dir = gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_SEL_DIR);
             vdi_delete_dir.set_size_request(96, 40);
 
             // Rc suffix: _rodd
@@ -1902,7 +1453,7 @@ fn open_vault(
             vdi_delete_dir.connect_clicked(move |_| {
                 // Delete current folder and everything inside, include subdir
                 let delwindow = Rc::new(gtk4::Window::new());
-                delwindow.set_title(Some("Confirm deletion?"));
+                delwindow.set_title(Some(lang::text::explorer::EXP_DELETE_CONFIRM));
                 delwindow.set_application(Some(app_rodd.as_ref()));
                 delwindow.set_size_request(240, 96);
                 delwindow.set_modal(true);
@@ -1910,24 +1461,30 @@ fn open_vault(
                 let del_grid = grid_builder(12, 12, 12, 12, 6, 12).build();
 
                 let currpath_str = Rc::new(vexpath_rodd.borrow().get_itext().to_owned());
-                let currpath_dirname = match vindex_rodd.borrow()
+                let currpath_dirname = match vindex_rodd
+                    .borrow()
                     .get(&PathBuf::from(currpath_str.as_ref()))
                 {
                     Some(n) => n.to_owned(),
                     None => {
-                        show_alert(vwindow_rodd.as_ref(), lang::text::generic::ERROR,
-                            "Failed to get the name of current folder.");
+                        show_alert(
+                            vwindow_rodd.as_ref(),
+                            lang::text::generic::ERROR,
+                            lang::text::explorer::EXP_DELETE_DIR_FETCH_FAILED,
+                        );
                         return;
                     }
                 };
 
-
-                let del_title = gtk4::Label::new(Some(&format!(
-                    "Are you sure you want to delete\nthe folder '{currpath_dirname}' and everything inside ?",
-                )));
+                let del_title = gtk4::Label::new(Some(
+                    &(lang::text::explorer::EXP_DELETE_DIR_DESC1.to_owned()
+                        + &currpath_dirname
+                        + lang::text::explorer::EXP_DELETE_DIR_DESC2),
+                ));
                 del_grid.attach(&del_title, 1, 1, 3, 1);
 
-                let del_no_button = gtk4::Button::with_label("No");
+                let del_no_button =
+                    gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_NO_BTN);
                 del_no_button.set_size_request(40, 28);
 
                 // Rc suffix: _roddn
@@ -1939,7 +1496,8 @@ fn open_vault(
                 });
                 del_grid.attach(&del_no_button, 1, 2, 1, 1);
 
-                let del_yes_button = gtk4::Button::with_label("Yes");
+                let del_yes_button =
+                    gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_YES_BTN);
                 del_yes_button.set_size_request(40, 28);
 
                 // Rc suffix: _roddy
@@ -1956,8 +1514,12 @@ fn open_vault(
                 let idcs_roddy = Rc::clone(&idcs_rodd);
                 let app_roddy = Rc::clone(&app_rodd);
                 del_yes_button.connect_clicked(move |_| {
-                    let keys_to_remove: Vec<PathBuf> = vindex_roddy.borrow().keys()
-                        .filter(|path| {path.starts_with(currpath_roddy.as_ref())}).cloned().collect();
+                    let keys_to_remove: Vec<PathBuf> = vindex_roddy
+                        .borrow()
+                        .keys()
+                        .filter(|path| path.starts_with(currpath_roddy.as_ref()))
+                        .cloned()
+                        .collect();
                     for key in keys_to_remove {
                         vindex_roddy.borrow_mut().remove(&key);
                         vdata_roddy.borrow_mut().remove(&key);
@@ -2001,10 +1563,17 @@ fn open_vault(
                         vfilelist_roddy.append(&*button);
                     }
 
-                    if iviewer_title_roddy.borrow().get_itext().split_once(":").unwrap().0.starts_with(currpath_roddy.as_ref()) {
+                    if iviewer_title_roddy
+                        .borrow()
+                        .get_itext()
+                        .split_once(":")
+                        .unwrap()
+                        .0
+                        .starts_with(currpath_roddy.as_ref())
+                    {
                         iviewer_title_roddy
                             .borrow_mut()
-                            .set_text("Click to open files...");
+                            .set_text(lang::text::explorer::EXP_ITEMNAME_PH);
                         iviewer_roddy.set_child(None::<&gtk4::Grid>);
                     }
 
@@ -2058,28 +1627,30 @@ fn open_vault(
             handler_rc.borrow_mut().take().unwrap().remove();
             glib::Propagation::Proceed
         } else if changed_crc.borrow().get().to_owned() {
-            // Check if there're any unsaved changes
             if iviewer_title_rc.borrow().text().ends_with("*") {
+                // Do you want to save changes in ...?
                 let isave_window = Rc::new(gtk4::Window::new());
                 isave_window.set_application(Some(wcl_app.as_ref()));
-                isave_window.set_title(Some("Save file changes?"));
-                isave_window.set_default_size(180, 48);
+                isave_window.set_title(Some(lang::text::explorer::EXP_CLOSURE_TITLE));
+                isave_window.set_default_size(144, 64);
                 isave_window.set_modal(true);
-                let isave_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+                let isave_grid = grid_builder(6, 12, 12, 12, 12, 6).build();
 
-                let isave_title = gtk4::Label::new(Some(&format!(
-                    "Do you want to save changes in {}?",
-                    iviewer_title_rc
-                        .borrow()
-                        .text()
-                        .rsplit_once("  ")
-                        .unwrap()
-                        .0
-                )));
+                let isave_title = gtk4::Label::new(Some(
+                    &(lang::text::explorer::EXP_CLOSURE_DESC1.to_owned()
+                        + iviewer_title_rc
+                            .borrow()
+                            .text()
+                            .rsplit_once("  ")
+                            .unwrap()
+                            .0
+                        + lang::text::explorer::EXP_CLOSURE_DESC2),
+                ));
                 isave_grid.attach(&isave_title, 1, 1, 3, 1);
 
-                let isave_yes_button = gtk4::Button::with_label("Save");
-                isave_yes_button.set_size_request(60, 32);
+                let isave_yes_button =
+                    gtk4::Button::with_label(lang::text::explorer::EXP_SAVE_ITEM);
+                isave_yes_button.set_size_request(36, 28);
 
                 let iviewer_window_irc = Rc::clone(&iviewer_window_rc);
                 let iviewer_title_irc = Rc::clone(&iviewer_title_rc);
@@ -2129,8 +1700,9 @@ fn open_vault(
                 });
                 isave_grid.attach(&isave_yes_button, 1, 2, 1, 1);
 
-                let isave_no_button = gtk4::Button::with_label("Don't save");
-                isave_no_button.set_size_request(60, 32);
+                let isave_no_button =
+                    gtk4::Button::with_label(lang::text::explorer::EXP_DONTSAVE_ITEM);
+                isave_no_button.set_size_request(36, 28);
 
                 let vpassword_rc = Rc::clone(&vault_password_rc);
                 let isave_window_nrc = Rc::clone(&isave_window);
@@ -2159,8 +1731,9 @@ fn open_vault(
                 });
                 isave_grid.attach(&isave_no_button, 2, 2, 1, 1);
 
-                let isave_cancel_button = gtk4::Button::with_label("Cancel");
-                isave_cancel_button.set_size_request(60, 32);
+                let isave_cancel_button =
+                    gtk4::Button::with_label(lang::text::explorer::EXP_CLOSURE_CANCEL);
+                isave_cancel_button.set_size_request(36, 28);
 
                 let isave_window_crc = Rc::clone(&isave_window);
                 isave_cancel_button.connect_clicked(move |_| {
@@ -2379,96 +1952,15 @@ pub fn get_files_from_vpath(
                     }
                 };
 
-                let iname = name_viewer_frc.borrow().text();
-                if !iname.ends_with("*") {
-                    let fileid_str = ipath.to_str().unwrap();
-                    let fileid = PathBuf::from(&fileid_str);
-                    let title = match index_frc.borrow().get(&fileid) {
-                        Some(s) => s.to_owned(),
-                        None => return,
-                    };
-                    let data = match data_frc.borrow().get(&fileid) {
-                        Some(d) => d.to_owned(),
-                        None => return,
-                    };
-                    content_viewer_frc.set_child(Some(
-                        get_item_viewer_grid(
-                            &title,
-                            &data,
-                            Rc::clone(&index_frc),
-                            Rc::clone(&data_frc),
-                            Rc::clone(&name_viewer_frc),
-                            Rc::clone(&idcs_frc),
-                        )
-                        .as_ref(),
-                    ));
-
-                    name_viewer_frc
-                        .borrow_mut()
-                        .set_itext(format!("{fileid_str}:{title}^"));
-                } else {
-                    let discard_window = Rc::new(gtk4::Window::new());
-                    discard_window.set_application(Some(app_frc.as_ref()));
-                    discard_window.set_title(Some(lang::text::explorer::EXP_DISCARD_TITLE));
-                    discard_window.set_default_size(240, 48);
-                    discard_window.set_modal(true);
-                    let discard_vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-                    let discard_desc =
-                        gtk4::Label::new(Some(lang::text::explorer::EXP_DISCARD_DESC));
-                    discard_vbox.append(&discard_desc);
-
-                    let discard_cont_btn =
-                        gtk4::Button::with_label(lang::text::explorer::EXP_DISCARD_CONT);
-
-                    let data_frc2 = Rc::clone(&data_frc);
-                    let index_frc2 = Rc::clone(&index_frc);
-                    let ipath_frc2 = Rc::clone(&ipath_frc);
-                    let idcs_frc2 = Rc::clone(&idcs_frc);
-                    let name_viewer_frc2 = Rc::clone(&name_viewer_frc);
-                    let content_viewer_frc2 = Rc::clone(&content_viewer_frc);
-                    let dwindow_rc = Rc::clone(&discard_window);
-                    discard_cont_btn.connect_clicked(move |_| {
-                        let fileid_str = ipath_frc2.to_str().unwrap();
-                        let fileid = PathBuf::from(&fileid_str);
-                        let title = match index_frc2.borrow().get(&fileid) {
-                            Some(s) => s.to_owned(),
-                            None => return,
-                        };
-                        let data = match data_frc2.borrow().get(&fileid) {
-                            Some(d) => d.to_owned(),
-                            None => return,
-                        };
-                        content_viewer_frc2.set_child(Some(
-                            get_item_viewer_grid(
-                                &title,
-                                &data,
-                                Rc::clone(&index_frc2),
-                                Rc::clone(&data_frc2),
-                                Rc::clone(&name_viewer_frc2),
-                                Rc::clone(&idcs_frc2),
-                            )
-                            .as_ref(),
-                        ));
-
-                        name_viewer_frc2
-                            .borrow_mut()
-                            .set_itext(format!("{fileid_str}:{title}^"));
-                        dwindow_rc.close();
-                    });
-                    discard_vbox.append(&discard_cont_btn);
-
-                    let discard_cancel_btn =
-                        gtk4::Button::with_label(lang::text::explorer::EXP_DISCARD_CANCEL);
-
-                    let dwindow_rc = Rc::clone(&discard_window);
-                    discard_cancel_btn.connect_clicked(move |_| {
-                        dwindow_rc.close();
-                    });
-                    discard_vbox.append(&discard_cancel_btn);
-
-                    discard_window.set_child(Some(&discard_vbox));
-                    discard_window.present();
-                }
+                open_other_file(
+                    Rc::clone(&app_frc),
+                    Rc::clone(&content_viewer_frc),
+                    Rc::clone(&name_viewer_frc),
+                    Rc::clone(&index_frc),
+                    Rc::clone(&data_frc),
+                    Rc::new(ipath_frc.display().to_string()),
+                    Rc::clone(&idcs_frc),
+                );
             });
         }
 
@@ -2593,6 +2085,341 @@ fn get_files_from_mpath(
     items
 }
 
+fn vault_move_file(
+    app_rc: Rc<gtk4::Application>,
+    idcs_rc: Rc<RefCell<ImgDecodingController>>,
+    changed_rc: Rc<RefCell<ItemContainer<bool>>>,
+    vindex_rc: Rc<RefCell<BTreeMap<PathBuf, String>>>,
+    vdata_rc: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
+    vwindow_rc: Rc<gtk4::Window>,
+    vfilelist_rc: Rc<gtk4::ListBox>,
+    iviewer_rc: Rc<gtk4::ScrolledWindow>,
+    vexpath_rc: Rc<RefCell<EntryWithInternalText>>,
+    iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
+) {
+    let mut fileinfo = iviewer_title_rc.borrow().get_itext().to_owned();
+    if fileinfo.ends_with("^") {
+        fileinfo.pop();
+    }
+    let (fileid_str, filename) = match fileinfo.split_once(":") {
+        Some((id, name)) => (id.to_owned(), name.to_owned()),
+        None => {
+            show_alert(
+                vwindow_rc.as_ref(),
+                lang::text::generic::ALERT,
+                lang::text::explorer::EXP_MOVE_NOSEL,
+            );
+            return;
+        }
+    };
+
+    let imove_window = Rc::new(gtk4::Window::new());
+    imove_window.set_title(Some(lang::text::explorer::EXP_MOVE_TITLE));
+    imove_window.set_application(Some(app_rc.as_ref()));
+    imove_window.set_size_request(240, 400);
+
+    let imove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+    imove_grid.set_halign(gtk4::Align::Center);
+
+    // Path viewer
+    let imove_expathi = gtk4::Entry::builder()
+        .text(vexpath_rc.borrow().text())
+        .editable(false)
+        .build();
+    imove_expathi.add_css_class("normal");
+    imove_expathi.set_size_request(240, 40);
+    let imove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
+        imove_expathi,
+        vexpath_rc.borrow().get_itext().to_owned(),
+    )));
+    imove_grid.attach(&**imove_expath.borrow(), 1, 1, 1, 1);
+
+    // Move confirm button
+    let imove_cfbutton = gtk4::Button::with_label(lang::text::explorer::EXP_MOVE_CONFIRM);
+    imove_cfbutton.add_css_class("normal");
+    imove_cfbutton.set_size_request(80, 40);
+
+    // Rc suffix: _romi
+    let changed_romi = Rc::clone(&changed_rc);
+    let vindex_romi = Rc::clone(&vindex_rc);
+    let vdata_romi = Rc::clone(&vdata_rc);
+    let idcs_romi = Rc::clone(&idcs_rc);
+    let app_romi = Rc::clone(&app_rc);
+    let iviewer_title_romi = Rc::clone(&iviewer_title_rc);
+    let vfilelist_romi = Rc::clone(&vfilelist_rc);
+    let iviewer_romi = Rc::clone(&iviewer_rc);
+    let vexpath_romi = Rc::clone(&vexpath_rc);
+    let imwindow_rc = Rc::clone(&imove_window);
+    let iexpath_rc = Rc::clone(&imove_expath);
+    imove_cfbutton.connect_clicked(move |_| {
+        let (curr_ipath, name) = match iviewer_title_romi.borrow().get_itext().split_once(":") {
+            Some((cipath_s, name_s)) => (cipath_s.to_owned(), name_s.to_owned()),
+            None => {
+                show_alert(
+                    imwindow_rc.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::explorer::EXP_MOVE_FINFO_ERR,
+                );
+                return;
+            }
+        };
+        let fdata = match vdata_romi.borrow().get(&PathBuf::from(curr_ipath)) {
+            Some(d) => d.to_owned(),
+            None => {
+                show_alert(
+                    imwindow_rc.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::explorer::EXP_MOVE_FDATA_ERR,
+                );
+                return;
+            }
+        };
+        let new_ipath = vault_append_file(
+            Rc::clone(&iexpath_rc),
+            filename.clone(),
+            Some(&fdata),
+            Rc::clone(&vindex_romi),
+            Rc::clone(&vdata_romi),
+        );
+        changed_romi.borrow_mut().set(true);
+        iviewer_title_romi
+            .borrow_mut()
+            .set_itext(new_ipath + ":" + &name);
+
+        let fileid = PathBuf::from(&fileid_str);
+        vindex_romi.borrow_mut().remove(&fileid);
+        vdata_romi.borrow_mut().remove(&fileid);
+
+        loop {
+            let dwidget = match vfilelist_romi.last_child() {
+                Some(w) => w,
+                None => break,
+            };
+            vfilelist_romi.remove(&dwidget);
+        }
+        for button in get_files_from_vpath(
+            Rc::clone(&app_romi),
+            Rc::clone(&vfilelist_romi),
+            Rc::clone(&idcs_romi),
+            Rc::clone(&vindex_romi),
+            Rc::clone(&vdata_romi),
+            PathBuf::from(vexpath_romi.borrow().get_itext()),
+            Rc::clone(&iviewer_title_romi),
+            Rc::clone(&iviewer_romi),
+            Rc::clone(&vexpath_romi),
+        ) {
+            vfilelist_romi.append(&*button);
+        }
+
+        imwindow_rc.close();
+    });
+    imove_grid.attach(&imove_cfbutton, 2, 1, 1, 1);
+
+    // Item list
+    let imove_fwindow = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .build();
+    imove_fwindow.set_size_request(240, 280);
+    let imove_fviewer = Rc::new(gtk4::ListBox::new());
+    imove_fwindow.set_child(Some(imove_fviewer.as_ref()));
+    imove_grid.attach(&imove_fwindow, 1, 2, 2, 1);
+
+    for button in get_files_from_mpath(
+        Rc::clone(&app_rc),
+        Rc::clone(&imove_fviewer),
+        Rc::clone(&vindex_rc),
+        Rc::clone(&vdata_rc),
+        PathBuf::from(imove_expath.borrow().get_itext()),
+        Rc::clone(&imove_expath),
+    ) {
+        imove_fviewer.append(&*button);
+    }
+
+    imove_window.set_child(Some(&imove_grid));
+    imove_window.set_modal(true);
+    imove_window.present();
+}
+
+fn vault_move_dir(
+    app_rc: Rc<gtk4::Application>,
+    idcs_rc: Rc<RefCell<ImgDecodingController>>,
+    changed_rc: Rc<RefCell<ItemContainer<bool>>>,
+    vindex_rc: Rc<RefCell<BTreeMap<PathBuf, String>>>,
+    vdata_rc: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
+    vfilelist_rc: Rc<gtk4::ListBox>,
+    iviewer_rc: Rc<gtk4::ScrolledWindow>,
+    vexpath_rc: Rc<RefCell<EntryWithInternalText>>,
+    iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
+) {
+    let dmove_window = Rc::new(gtk4::Window::new());
+    dmove_window.set_title(Some(lang::text::explorer::EXP_MOVE_TITLE));
+    dmove_window.set_application(Some(app_rc.as_ref()));
+    dmove_window.set_size_request(240, 400);
+
+    let dmove_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+    dmove_grid.set_halign(gtk4::Align::Center);
+
+    // Path viewer
+    let mut parent = PathBuf::from(vexpath_rc.borrow().text());
+    parent.pop();
+    let dmove_expathi = gtk4::Entry::builder()
+        .text(parent.display().to_string())
+        .editable(false)
+        .build();
+    dmove_expathi.add_css_class("normal");
+    dmove_expathi.set_size_request(240, 40);
+
+    parent = PathBuf::from(vexpath_rc.borrow().get_itext());
+    parent.pop();
+    let dmove_expath = Rc::new(RefCell::new(EntryWithInternalText::new(
+        dmove_expathi,
+        parent.display().to_string(),
+    )));
+    dmove_grid.attach(&**dmove_expath.borrow(), 1, 1, 1, 1);
+
+    // Move confirm button
+    let dmove_cfbutton = gtk4::Button::with_label(lang::text::explorer::EXP_MOVE_CONFIRM);
+    dmove_cfbutton.add_css_class("normal");
+    dmove_cfbutton.set_size_request(80, 40);
+
+    // Rc suffix: _romd
+    let changed_romd = Rc::clone(&changed_rc);
+    let vindex_romd = Rc::clone(&vindex_rc);
+    let vdata_romd = Rc::clone(&vdata_rc);
+    let idcs_romd = Rc::clone(&idcs_rc);
+    let app_romd = Rc::clone(&app_rc);
+    let iviewer_title_romd = Rc::clone(&iviewer_title_rc);
+    let vfilelist_romd = Rc::clone(&vfilelist_rc);
+    let iviewer_romd = Rc::clone(&iviewer_rc);
+    let vexpath_romd = Rc::clone(&vexpath_rc);
+    let dmwindow_rc = Rc::clone(&dmove_window);
+    let dexpath_rc = Rc::clone(&dmove_expath);
+    dmove_cfbutton.connect_clicked(move |_| {
+        let from_path = vexpath_romd.borrow().get_itext().clone();
+        if &from_path == dexpath_rc.borrow().get_itext() {
+            dmwindow_rc.close();
+            return;
+        }
+        let mut dirpath = vexpath_romd.borrow().text().to_string();
+        dirpath.pop();
+        let dirname = dirpath.rsplit_once("/").unwrap().1.to_owned() + "/";
+
+        let new_ipath =
+            vault_append_folder(Rc::clone(&dexpath_rc), dirname, Rc::clone(&vindex_romd));
+        dexpath_rc.borrow_mut().set_itext(new_ipath);
+
+        // Search for the file to copy
+        // We can't actually copy it inside this loop,
+        // because the loop itself requires vindex to be borrowed
+        let mut copylist: Vec<(PathBuf, String)> = Vec::new();
+        for (spath, sname) in &*vindex_romd.borrow() {
+            if !spath.starts_with(&from_path) {
+                continue;
+            }
+            // Exclude subdirectory here
+            if spath.parent().unwrap_or(&PathBuf::from("/")) != &from_path {
+                continue;
+            }
+
+            copylist.push((spath.to_owned(), sname.clone()));
+        }
+
+        // Do the actual copy
+        for (ipath_str, name) in copylist {
+            let ipath = PathBuf::from(ipath_str);
+            let fdata = match vdata_romd.borrow().get(&ipath) {
+                Some(d) => d.to_owned(),
+                None => {
+                    show_alert(
+                        dmwindow_rc.as_ref(),
+                        lang::text::generic::ERROR,
+                        lang::text::explorer::EXP_MOVE_FDATA_ERR,
+                    );
+                    return;
+                }
+            };
+            vault_append_file(
+                Rc::clone(&dexpath_rc),
+                name.clone(),
+                Some(&fdata),
+                Rc::clone(&vindex_romd),
+                Rc::clone(&vdata_romd),
+            );
+
+            vindex_romd.borrow_mut().remove(&ipath);
+            vindex_romd.borrow_mut().remove(&ipath);
+        }
+
+        // Remove the origin folder
+        let mut from_pb = PathBuf::from(from_path);
+        vindex_romd.borrow_mut().remove(&from_pb);
+        changed_romd.borrow_mut().set(true);
+
+        // Go up to the existing folder
+        let mut showpath = PathBuf::from(vexpath_romd.borrow().text());
+        showpath.pop();
+        vexpath_romd
+            .borrow_mut()
+            .set_text(&showpath.display().to_string());
+        from_pb.pop();
+        vexpath_romd
+            .borrow_mut()
+            .set_itext(from_pb.display().to_string());
+
+        loop {
+            let dwidget = match vfilelist_romd.last_child() {
+                Some(w) => w,
+                None => break,
+            };
+            vfilelist_romd.remove(&dwidget);
+        }
+        for button in get_files_from_vpath(
+            Rc::clone(&app_romd),
+            Rc::clone(&vfilelist_romd),
+            Rc::clone(&idcs_romd),
+            Rc::clone(&vindex_romd),
+            Rc::clone(&vdata_romd),
+            from_pb,
+            Rc::clone(&iviewer_title_romd),
+            Rc::clone(&iviewer_romd),
+            Rc::clone(&vexpath_romd),
+        ) {
+            vfilelist_romd.append(&*button);
+        }
+
+        dmwindow_rc.close();
+    });
+    dmove_grid.attach(&dmove_cfbutton, 2, 1, 1, 1);
+
+    // Item list
+    let dmove_fwindow = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .build();
+    dmove_fwindow.set_size_request(240, 280);
+    let dmove_fviewer = Rc::new(gtk4::ListBox::new());
+    dmove_fwindow.set_child(Some(dmove_fviewer.as_ref()));
+    dmove_grid.attach(&dmove_fwindow, 1, 2, 2, 1);
+
+    for button in get_files_from_mpath(
+        Rc::clone(&app_rc),
+        Rc::clone(&dmove_fviewer),
+        Rc::clone(&vindex_rc),
+        Rc::clone(&vdata_rc),
+        PathBuf::from(dmove_expath.borrow().get_itext()),
+        Rc::clone(&dmove_expath),
+    ) {
+        dmove_fviewer.append(&*button);
+    }
+
+    dmove_window.set_child(Some(&dmove_grid));
+    dmove_window.set_modal(true);
+    dmove_window.present();
+}
+
 fn get_item_viewer_grid(
     title: &String,
     data: &Vec<u8>,
@@ -2649,10 +2476,11 @@ fn get_item_viewer_grid(
                         parsed.0[3],
                     );
                 } else {
-                    warn_label.set_text(&format!(
-                        "{}\nWarning: Invalid styling at line {lcount} > {line}",
-                        warn_label.text()
-                    ));
+                    warn_label.set_text(
+                        &(warn_label.text().to_string()
+                            + lang::text::explorer::EXP_BGSF_STYLE_ERR
+                            + &lcount.to_string()),
+                    );
                 }
             } else if line.starts_with("@item:") {
                 if let Some((style, path_str)) = bgsf_decode_item(line) {
@@ -2670,16 +2498,18 @@ fn get_item_viewer_grid(
                         continue;
                     }
                 } else {
-                    warn_label.set_text(&format!(
-                        "{}\nWarning: Invalid styling at line {lcount}  ({line})",
-                        warn_label.text()
-                    ));
+                    warn_label.set_text(
+                        &(warn_label.text().to_string()
+                            + lang::text::explorer::EXP_BGSF_STYLE_ERR
+                            + &lcount.to_string()),
+                    );
                 }
             } else {
-                warn_label.set_text(&format!(
-                    "{}\nWarning: invalid format at line {lcount} > {line}",
-                    warn_label.text()
-                ));
+                warn_label.set_text(
+                    &(warn_label.text().to_string()
+                        + lang::text::explorer::EXP_BGSF_FORMAT_ERR
+                        + &lcount.to_string()),
+                );
             }
             lcount += 1;
         }
@@ -2715,7 +2545,7 @@ fn get_item_viewer_grid(
         text_viewer.add_css_class("normal");
         text_viewer
             .buffer()
-            .set_text("Sorry, only PNG/JPEG Images are supported.");
+            .set_text(lang::text::explorer::EXP_BGSF_IMG_TYPE_SRY);
         iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
     } else if data_utf8.is_ok() {
         // Show as text
@@ -2755,7 +2585,7 @@ fn get_item_viewer_grid(
         ititle_label
             .borrow_mut()
             .label
-            .set_text(&(title_fmt + "  :  Binary"));
+            .set_text(&(title_fmt + lang::text::explorer::EXP_CONTENT_BIN_TITLE));
         let text_viewer = gtk4::TextView::builder()
             .hexpand(true)
             .vexpand(true)
@@ -2765,11 +2595,117 @@ fn get_item_viewer_grid(
         text_viewer.add_css_class("normal");
         text_viewer
             .buffer()
-            .set_text("Editing/Viewing binary file will be implemented someday.");
+            .set_text(lang::text::explorer::EXP_CONTENT_BIN_DESC);
         iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
     };
 
     Rc::clone(&iviewer_grid)
+}
+
+fn open_other_file(
+    app_rc: Rc<gtk4::Application>,
+    iviewer_rc: Rc<gtk4::ScrolledWindow>,
+    iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
+    vindex_rc: Rc<RefCell<BTreeMap<PathBuf, String>>>,
+    vdata_rc: Rc<RefCell<BTreeMap<PathBuf, Vec<u8>>>>,
+    ipath_rc: Rc<String>,
+    idcs_rc: Rc<RefCell<ImgDecodingController>>,
+) {
+    if iviewer_title_rc.borrow().text().ends_with("*") {
+        // Do you want to discard changes in ...?
+        let discard_window = Rc::new(gtk4::Window::new());
+        discard_window.set_application(Some(app_rc.as_ref()));
+        discard_window.set_title(Some(lang::text::explorer::EXP_DISCARD_TITLE));
+        discard_window.set_default_size(240, 48);
+        discard_window.set_modal(true);
+        let discard_vbox = gtk4::Box::builder()
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .halign(gtk4::Align::Center)
+            .orientation(gtk4::Orientation::Vertical)
+            .spacing(6)
+            .build();
+
+        let discard_desc = gtk4::Label::new(Some(lang::text::explorer::EXP_DISCARD_DESC));
+        discard_vbox.append(&discard_desc);
+
+        let discard_cont_btn = gtk4::Button::with_label(lang::text::explorer::EXP_DISCARD_CONT);
+
+        let index_drc = Rc::clone(&vindex_rc);
+        let data_drc = Rc::clone(&vdata_rc);
+        let idcs_drc = Rc::clone(&idcs_rc);
+        let ipath_drc = Rc::clone(&ipath_rc);
+        let nviewer_drc = Rc::clone(&iviewer_title_rc);
+        let cviewer_drc = Rc::clone(&iviewer_rc);
+        let dwindow_yrc = Rc::clone(&discard_window);
+        discard_cont_btn.connect_clicked(move |_| {
+            let fileid = PathBuf::from(ipath_drc.as_ref());
+            let title = match index_drc.borrow().get(&fileid) {
+                Some(s) => s.to_owned(),
+                None => return,
+            };
+            let data = match data_drc.borrow().get(&fileid) {
+                Some(d) => d.to_owned(),
+                None => return,
+            };
+            cviewer_drc.set_child(Some(
+                get_item_viewer_grid(
+                    &title,
+                    &data,
+                    Rc::clone(&index_drc),
+                    Rc::clone(&data_drc),
+                    Rc::clone(&nviewer_drc),
+                    Rc::clone(&idcs_drc),
+                )
+                .as_ref(),
+            ));
+
+            nviewer_drc
+                .borrow_mut()
+                .set_itext(format!("{}:{title}^", ipath_drc.as_ref()));
+
+            dwindow_yrc.close();
+        });
+        discard_vbox.append(&discard_cont_btn);
+
+        let discard_cancel_btn = gtk4::Button::with_label(lang::text::explorer::EXP_DISCARD_CANCEL);
+
+        let dwindow_rc = Rc::clone(&discard_window);
+        discard_cancel_btn.connect_clicked(move |_| {
+            dwindow_rc.close();
+        });
+        discard_vbox.append(&discard_cancel_btn);
+
+        discard_window.set_child(Some(&discard_vbox));
+        discard_window.present();
+    } else {
+        let fileid = PathBuf::from(ipath_rc.as_ref());
+        let title = match vindex_rc.borrow().get(&fileid) {
+            Some(s) => s.to_owned(),
+            None => return,
+        };
+        let data = match vdata_rc.borrow().get(&fileid) {
+            Some(d) => d.to_owned(),
+            None => return,
+        };
+        iviewer_rc.set_child(Some(
+            get_item_viewer_grid(
+                &title,
+                &data,
+                Rc::clone(&vindex_rc),
+                Rc::clone(&vdata_rc),
+                Rc::clone(&iviewer_title_rc),
+                Rc::clone(&idcs_rc),
+            )
+            .as_ref(),
+        ));
+
+        iviewer_title_rc
+            .borrow_mut()
+            .set_itext(format!("{}:{title}^", ipath_rc.as_ref()));
+    }
 }
 
 fn vault_append_file(
@@ -2847,11 +2783,16 @@ fn get_vault_full_string(
 }
 
 fn get_text_from_cwin(window: &gtk4::ScrolledWindow) -> Option<glib::GString> {
-    let textview: gtk4::TextView =
-        match window.child()?.first_child()?.first_child()?.dynamic_cast() {
-            Ok(t) => t,
-            Err(_) => return None,
-        };
+    let textview: gtk4::TextView = match window
+        .child()?
+        .first_child()?
+        .first_child()?
+        .first_child()?
+        .dynamic_cast()
+    {
+        Ok(t) => t,
+        Err(_) => return None,
+    };
     let bounds = textview.buffer().bounds();
     Some(textview.buffer().text(&bounds.0, &bounds.1, true))
 }

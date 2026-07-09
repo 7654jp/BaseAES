@@ -1,0 +1,33 @@
+label {
+    font-size: 14pt;
+}
+
+.normal {
+    font-size: 14pt;
+}
+
+.big {
+    font-size: 18pt;
+}
+
+label.notice {
+    color: #000;
+}
+
+scrolledwindow.notice {
+    background-color: #fee;
+}
+
+label.warning {
+    color: #fc0;
+}
+
+.text_viewer {
+    /*
+    Source - https://stackoverflow.com/a/14573813
+    Posted by akky, modified by community. See post 'Timeline' for change history
+    Retrieved 2026-06-22, License - CC BY-SA 3.0
+    */
+
+    font-family: "ヒラギノ角ゴ Pro W3", "Hiragino Kaku Gothic Pro", Osaka, "メイリオ", Meiryo, "ＭＳ Ｐゴシック", "MS PGothic", sans-serif;
+}

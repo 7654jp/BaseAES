@@ -7,7 +7,9 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "features": ["lang_en"],
+          "features": [
+            "lang_en"
+          ],
         },
       },
     },
