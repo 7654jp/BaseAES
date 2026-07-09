@@ -295,10 +295,12 @@ pub fn bgsf_parse_item(
         let pdata = match bdata_rc.get(&dpath) {
             Some(d) => d,
             None => {
-                warn_label.set_text(&format!(
-                    "{}\nWarning: The file doesn't exist at line {lcount}  ({path_str})",
-                    warn_label.text()
-                ));
+                warn_label.set_text(
+                    &(warn_label.text().to_string()
+                        + lang::text::tools::BGSF_NOFILE
+                        + &lcount.to_string()
+                        + &format!(" ({path_str})")),
+                );
                 return true;
             }
         };
@@ -313,11 +315,9 @@ pub fn bgsf_parse_item(
                 .build();
             text_viewer.add_css_class("normal");
             text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
-            text_viewer
-                .buffer()
-                .set_text(str::from_utf8(pdata).unwrap_or(
-                    "Failed to read data as text. Data is saved but we're not able to show it.",
-                ));
+            text_viewer.buffer().set_text(
+                str::from_utf8(pdata).unwrap_or(lang::text::tools::BGSF_TEXT_PARSE_FAILED),
+            );
             iviewer_grid.attach(&text_viewer, style[0], style[1] + 1, style[2], style[3]);
         } else if lmime == "image/png" || lmime == "image/jpeg" {
             // Image parsing
@@ -347,17 +347,19 @@ pub fn bgsf_parse_item(
             text_viewer.set_wrap_mode(gtk4::WrapMode::Word);
             text_viewer
                 .buffer()
-                .set_text("Sorry, only PNG/JPEG Images are supported.");
+                .set_text(lang::text::explorer::EXP_BGSF_IMG_TYPE_SRY);
             iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
         } else {
-            let phlabel = gtk4::Label::new(Some(&format!("Decoded: {:?}", dpath)));
+            let phlabel = gtk4::Label::new(Some(lang::text::explorer::EXP_CONTENT_BIN_DESC));
             iviewer_grid.attach(&phlabel, style[0], style[1] + 1, style[2], style[3]);
         }
     } else {
-        warn_label.set_text(&format!(
-            "{}\nWarning: Invalid path at line {lcount}  ({path_str})",
-            warn_label.text()
-        ));
+        warn_label.set_text(
+            &(warn_label.text().to_string()
+                + lang::text::tools::BGSF_PATH_ERR
+                + &lcount.to_string()
+                + &format!(" ({path_str})")),
+        );
     }
     false
 }
@@ -1110,15 +1112,21 @@ pub fn delete_button_vault_list(
         let commindex_rc = Rc::clone(&commindex);
         let commlabel_rc = Rc::clone(&commlabel);
         vlist_button.connect_clicked(move |_| {
-            let masted_vdata =
-                match master_read_vault_at(Some(pwindow_rc.as_ref()), mastpath_rc.as_ref(), vault_index_at as usize) {
-                    Some(v) => v,
-                    None => return,
-                };
+            let masted_vdata = match master_read_vault_at(
+                Some(pwindow_rc.as_ref()),
+                mastpath_rc.as_ref(),
+                vault_index_at as usize,
+            ) {
+                Some(v) => v,
+                None => return,
+            };
             if vtype == b"d" {
-                if let Some(mast_decoded_vname) =
-                    decrypt_aes(Some(pwindow_rc.as_ref()), &masted_vdata.1, masted_vdata.0, false)
-                {
+                if let Some(mast_decoded_vname) = decrypt_aes(
+                    Some(pwindow_rc.as_ref()),
+                    &masted_vdata.1,
+                    masted_vdata.0,
+                    false,
+                ) {
                     // Ask vault password
                     let pw_window = Rc::new(
                         gtk4::Window::builder()
@@ -1132,7 +1140,8 @@ pub fn delete_button_vault_list(
                     let vdel_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                     // Password label
-                    let pw_pass_label = gtk4::Label::new(Some(lang::text::tools::DELETE_VAULT_CONF_DESC));
+                    let pw_pass_label =
+                        gtk4::Label::new(Some(lang::text::tools::DELETE_VAULT_CONF_DESC));
                     vdel_grid.attach(&pw_pass_label, 1, 1, 2, 1);
                     // Password input box
                     let vdel_pass_box = gtk4::PasswordEntry::new();
@@ -1147,9 +1156,11 @@ pub fn delete_button_vault_list(
                     let pw_window_rc = Rc::clone(&pw_window);
                     pw_ok_button.connect_clicked(move |_| {
                         // Decode
-                        let vault_password =
-                            Rc::new(hashify_sha256(vdel_pass_box.text().to_string() + VAULT_SALT));
-                        let (mast_decoded_noncer, mast_decoded_vname) = mast_decoded_vname.split_at(12);
+                        let vault_password = Rc::new(hashify_sha256(
+                            vdel_pass_box.text().to_string() + VAULT_SALT,
+                        ));
+                        let (mast_decoded_noncer, mast_decoded_vname) =
+                            mast_decoded_vname.split_at(12);
                         let mast_decoded_nonce: [u8; 12] = mast_decoded_noncer.try_into().unwrap();
 
                         match decrypt_aes_with_key(
@@ -1161,20 +1172,22 @@ pub fn delete_button_vault_list(
                         ) {
                             Some(_) => {
                                 // Remove selected
-                                let vname_removed =
-                                    vname_plain_krc.replace(&format!(",{}", vname_rc.as_ref()), "");
+                                let vname_removed = vname_plain_krc
+                                    .replace(&(",".to_owned() + vname_rc.as_ref()), "");
                                 commlabel_drc.borrow_mut().set_text(&vname_removed);
                                 commindex_drc.borrow_mut().set(vault_index_at);
-                                commlabel_drc
-                                    .borrow_mut()
-                                    .add_css_class(&format!("del_{}_{}", vname_rc.as_ref(), u8_to_hex(&mast_decoded_nonce[0..8])));
+                                commlabel_drc.borrow_mut().add_css_class(&format!(
+                                    "del_{}_{}",
+                                    vname_rc.as_ref(),
+                                    u8_to_hex(&mast_decoded_nonce[0..8])
+                                ));
                                 pw_window_rc.close();
                             }
                             None => {
                                 show_alert(
                                     pw_window_rc.as_ref(),
                                     lang::text::generic::ALERT,
-                                    "Vault decryption failed.\nThe password might be incorrect.",
+                                    lang::text::unlock::VUNLOCK_DEC_FAILED,
                                 );
                                 return;
                             }
@@ -1188,7 +1201,7 @@ pub fn delete_button_vault_list(
                     show_alert(
                         pwindow_rc.as_ref(),
                         lang::text::generic::ERROR,
-                        "Failed to decrypt master vault.",
+                        lang::text::tools::MAST_VAULT_DEC_FAILED,
                     );
                 };
             } else if vtype == b"u" {
@@ -1196,14 +1209,14 @@ pub fn delete_button_vault_list(
                 // Ask password window
                 let mpw_window = Rc::new(gtk4::Window::new());
                 mpw_window.set_application(Some(ccapp.as_ref()));
-                mpw_window.set_title(Some("Master password"));
+                mpw_window.set_title(Some(lang::text::generic::MAST_PW_TITLE));
                 mpw_window.set_size_request(216, 84);
                 mpw_window.set_resizable(false);
 
                 let mpw_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                 // Ask label
-                let mpw_label = gtk4::Label::new(Some("Enter password to open master vault."));
+                let mpw_label = gtk4::Label::new(Some(lang::text::generic::MAST_PW_DESC));
                 mpw_grid.attach(&mpw_label, 1, 1, 3, 1);
                 // Input box
                 let mpw_passbox = gtk4::PasswordEntry::new();
@@ -1231,7 +1244,7 @@ pub fn delete_button_vault_list(
                         // Ask vault password
                         let pw_window = Rc::new(
                             gtk4::Window::builder()
-                                .title("Confirm deletion")
+                                .title(lang::text::tools::DELETE_VAULT_CONF_TITLE)
                                 .modal(true)
                                 .build(),
                         );
@@ -1241,7 +1254,8 @@ pub fn delete_button_vault_list(
                         let vdel_grid = grid_builder(6, 6, 12, 12, 24, 12).build();
 
                         // Password label
-                        let pw_pass_label = gtk4::Label::new(Some("Enter Vault password to confirm:"));
+                        let pw_pass_label =
+                            gtk4::Label::new(Some(lang::text::tools::DELETE_VAULT_CONF_DESC));
                         vdel_grid.attach(&pw_pass_label, 1, 1, 2, 1);
                         // Password input box
                         let vdel_pass_box = gtk4::PasswordEntry::new();
@@ -1257,10 +1271,13 @@ pub fn delete_button_vault_list(
                         let vname_plain_crc = Rc::clone(&vname_plain_urc);
                         pw_ok_button.connect_clicked(move |_| {
                             // Decode
-                            let vault_password =
-                                Rc::new(hashify_sha256(vdel_pass_box.text().to_string() + VAULT_SALT));
-                            let (demast_vault_nonces, demast_vault_data) = demast_vault.split_at(12);
-                            let demast_vault_nonce: [u8; 12] = demast_vault_nonces.try_into().unwrap();
+                            let vault_password = Rc::new(hashify_sha256(
+                                vdel_pass_box.text().to_string() + VAULT_SALT,
+                            ));
+                            let (demast_vault_nonces, demast_vault_data) =
+                                demast_vault.split_at(12);
+                            let demast_vault_nonce: [u8; 12] =
+                                demast_vault_nonces.try_into().unwrap();
 
                             match decrypt_aes_with_key(
                                 Some(pw_window_rc.as_ref()),
@@ -1271,20 +1288,22 @@ pub fn delete_button_vault_list(
                             ) {
                                 Some(_) => {
                                     // Remove selected
-                                    let vname_removed =
-                                        vname_plain_crc.replace(&format!(",{}", vname_crc.as_ref()), "");
+                                    let vname_removed = vname_plain_crc
+                                        .replace(&format!(",{}", vname_crc.as_ref()), "");
                                     commlabel_crc.borrow_mut().set_text(&vname_removed);
                                     commindex_crc.borrow_mut().set(vault_index_at);
-                                    commlabel_crc
-                                        .borrow_mut()
-                                        .add_css_class(&format!("del_{}_{}", vname_crc.as_ref(), u8_to_hex(&demast_vault_nonce[0..8])));
+                                    commlabel_crc.borrow_mut().add_css_class(&format!(
+                                        "del_{}_{}",
+                                        vname_crc.as_ref(),
+                                        u8_to_hex(&demast_vault_nonce[0..8])
+                                    ));
                                     pw_window_rc.close();
                                 }
                                 None => {
                                     show_alert(
                                         pw_window_rc.as_ref(),
                                         lang::text::generic::ALERT,
-                                        "Vault decryption failed.\nThe password might be incorrect.",
+                                        lang::text::unlock::VUNLOCK_DEC_FAILED,
                                     );
                                     return;
                                 }
@@ -1298,7 +1317,7 @@ pub fn delete_button_vault_list(
                         show_alert(
                             pwindow_urc.as_ref(),
                             lang::text::generic::ERROR,
-                            "Failed to decrypt master vault.\nThe password might be incorrect.",
+                            lang::text::tools::MAST_VAULT_UDEC_FAILED,
                         );
                     };
                 });
@@ -1308,12 +1327,6 @@ pub fn delete_button_vault_list(
                 mpw_window.set_child(Some(&mpw_grid));
                 mpw_window.set_modal(true);
                 mpw_window.present();
-            } else {
-                show_alert(
-                    pwindow_rc.as_ref(),
-                    lang::text::generic::ERROR,
-                    "Failed to parse master vault.",
-                );
             }
         });
         buttons.push(vlist_button);
@@ -1364,8 +1377,9 @@ pub fn baseaes_setup(
         .wrap(true)
         .wrap_mode(gtk4::pango::WrapMode::Word)
         .build();
-    setup_precautions_text.set_label(PRECAUTIONS_TEXT);
+    setup_precautions_text.set_label(lang::text::setup::PRECAUTIONS_TEXT);
     setup_precautions_text.add_css_class("notice");
+    setup_precautions_text.add_css_class("text_viewer");
     setup_precautions.set_child(Some(&setup_precautions_text));
     setup_grid.attach(&setup_precautions, 4, 3, 4, 8);
 
@@ -1449,7 +1463,7 @@ pub fn baseaes_setup(
     setup_already_done_button.connect_clicked(move |_| {
         let setup_mfile_seldialog = gtk4::FileDialog::builder()
             .modal(true)
-            .title("Select the master vault")
+            .title(lang::text::home::MAST_LOCATION_SELECT_TITLE)
             .build();
 
         let setup_window_src = Rc::clone(&setup_window_arc);
@@ -1462,7 +1476,7 @@ pub fn baseaes_setup(
                     show_alert(
                         setup_window_src.as_ref(),
                         lang::text::generic::ERROR,
-                        "Failed to open the selected file.",
+                        lang::text::explorer::EXP_IMPORT_OPEN_ERROR,
                     );
                     return;
                 }
@@ -1645,15 +1659,19 @@ pub fn save_vault(
 ) {
     let save_window = Rc::new(gtk4::Window::new());
     save_window.set_application(Some(app_rc.as_ref()));
-    save_window.set_title(Some("Save changes?"));
+    save_window.set_title(Some(lang::text::tools::SAVE_VAULT_TITLE));
     save_window.set_default_size(180, 48);
     save_window.set_modal(true);
     let save_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
-    let save_title = gtk4::Label::new(Some(&format!("Do you want to save changes in '{vname}'?")));
+    let save_title = gtk4::Label::new(Some(
+        &(lang::text::tools::SAVE_VAULT_DESC1.to_owned()
+            + vname.as_ref()
+            + lang::text::tools::SAVE_VAULT_DESC2),
+    ));
     save_grid.attach(&save_title, 1, 1, 3, 1);
 
-    let save_yes_button = gtk4::Button::with_label("Save");
+    let save_yes_button = gtk4::Button::with_label(lang::text::explorer::EXP_SAVE_ITEM);
     save_yes_button.set_size_request(60, 32);
 
     let vnamerc = Rc::clone(&vname);
@@ -1686,7 +1704,7 @@ pub fn save_vault(
     });
     save_grid.attach(&save_yes_button, 1, 2, 1, 1);
 
-    let save_no_button = gtk4::Button::with_label("Don't save");
+    let save_no_button = gtk4::Button::with_label(lang::text::explorer::EXP_DONTSAVE_ITEM);
     save_no_button.set_size_request(60, 32);
 
     let save_window_nrc = Rc::clone(&save_window);
@@ -1698,7 +1716,7 @@ pub fn save_vault(
     });
     save_grid.attach(&save_no_button, 2, 2, 1, 1);
 
-    let save_cancel_button = gtk4::Button::with_label("Cancel");
+    let save_cancel_button = gtk4::Button::with_label(lang::text::explorer::EXP_CLOSURE_CANCEL);
     save_cancel_button.set_size_request(60, 32);
 
     let save_window_crc = Rc::clone(&save_window);
@@ -1733,14 +1751,14 @@ pub fn delete_file_confirm(
         show_alert(
             vdi_window_rc.as_ref(),
             lang::text::generic::ALERT,
-            "No file is selected.\nSelect a file you want to delete, and try again.",
+            lang::text::tools::EXP_DELETE_NOSEL,
         );
         return;
     }
     let fileid = Rc::new(PathBuf::from(ofile.unwrap().0));
 
     let delwindow = Rc::new(gtk4::Window::new());
-    delwindow.set_title(Some("Confirm deletion?"));
+    delwindow.set_title(Some(lang::text::explorer::EXP_DELETE_CONFIRM));
     delwindow.set_application(Some(app_rc.as_ref()));
     delwindow.set_size_request(240, 96);
     delwindow.set_modal(true);
@@ -1753,17 +1771,18 @@ pub fn delete_file_confirm(
         show_alert(
             vdi_window_rc.as_ref(),
             lang::text::generic::ERROR,
-            "Could not find the file selected.",
+            lang::text::explorer::EXP_RENAME_NOTFOUND,
         );
         return;
     };
-    let del_title = gtk4::Label::new(Some(&format!(
-        "Are you sure you want to delete '{}' ?",
-        ofilename.unwrap()
-    )));
+    let del_title = gtk4::Label::new(Some(
+        &(lang::text::tools::EXP_DELETE_FILE_DESC1.to_owned()
+            + ofilename.unwrap()
+            + lang::text::tools::EXP_DELETE_FILE_DESC2),
+    ));
     del_grid.attach(&del_title, 1, 1, 3, 1);
 
-    let del_no_button = gtk4::Button::with_label("No");
+    let del_no_button = gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_NO_BTN);
     del_no_button.set_size_request(40, 28);
 
     // Rc suffix: _nrc
@@ -1782,7 +1801,7 @@ pub fn delete_file_confirm(
 
     del_grid.attach(&del_no_button, 1, 2, 1, 1);
 
-    let del_yes_button = gtk4::Button::with_label("Yes");
+    let del_yes_button = gtk4::Button::with_label(lang::text::explorer::EXP_DELETE_YES_BTN);
     del_yes_button.set_size_request(40, 28);
 
     // Rc suffix: _yrc
@@ -1805,21 +1824,21 @@ pub fn delete_file_confirm(
                 show_alert(
                     delwindow_yrc.as_ref(),
                     lang::text::generic::ERROR,
-                    "The selected file was not found.",
+                    lang::text::tools::EXP_DELETE_NOT_FOUND,
                 );
             }
             (None, Some(_)) => {
                 show_alert(
                     delwindow_yrc.as_ref(),
                     lang::text::generic::ERROR,
-                    "The file was not found on index, but deletion was successful.",
+                    lang::text::tools::EXP_DELETE_INDEX_NF,
                 );
             }
             (Some(_), None) => {
                 show_alert(
                     delwindow_yrc.as_ref(),
                     lang::text::generic::ERROR,
-                    "The file was found on index, but failed to delete its data.",
+                    lang::text::tools::EXP_DELETE_DATA_NF,
                 );
             }
             _ => {}
@@ -1850,7 +1869,7 @@ pub fn delete_file_confirm(
 
         iviewer_title_yrc
             .borrow_mut()
-            .set_text("Click to open files...");
+            .set_text(lang::text::explorer::EXP_ITEMNAME_PH);
         iviewer_title_yrc.borrow_mut().set_itext(String::new());
         iviewer_yrc.set_child(None::<&gtk4::Grid>);
 
@@ -1869,19 +1888,3 @@ pub const VAULT_SALT: &str = "VES%SGFzaGEyNTY=";
 
 // CBK: Common Base Key
 const BASE_KEY: &[u8; 32] = b"CBK@TmV2ZXJHb25uYUdpdmVZb3VVcA==";
-
-const PRECAUTIONS_TEXT: &str = concat!(
-    "1. DATA INTEGRITY\n",
-    "THIS DOES NOT GUARANTEE THAT ENCRYPTED DATA HAS NOT BEEN ALTERED. DATA TAMPERING OR CORRUPTION MAY OCCUR.\n\n",
-    "2. DATA LEGALITY\n",
-    "USERS ARE SOLELY RESPONSIBLE FOR VERIFYING AND ENSURING THAT THE DATA THEY COLLECT, USE, AND STORE IS LEGALLY PERMISSIBLE. THIS PROGRAM DOES NOT ASSIST WITH SUCH COMPLIANCE.\n\n",
-    "3. ACCESS CONTROL\n",
-    "ENCRYPTION ALONE DOESN'T GUARANTEE SECURITY. PROPER ACCESS MANAGEMENT MUST BE IMPLEMENTED.\n\n",
-    "4. KEY MANAGEMENT\n",
-    "SECURELY MANAGING ENCRYPTION KEYS IS CRITICALLY IMPORTANT. IF A KEY IS COMPROMISED, DATA CONFIDENTIALITY WILL BE LOST.\n\n",
-    "5. DATA RECOVERY IMPOSSIBILITY\n",
-    "LOSING AN ENCRYPTION KEY WILL MAKE YOUR ENCRYPTED DATA INACCESSIBLE. SINCE IT CANNOT BE RECOVERED, THIS POSES A SIGNIFICANT RISK FOR IMPORTANT DATA.\n\n",
-    "6. USER AGREEMENT\n",
-    "USERS MUST ACKNOWLEDGE AND ACCEPT THE RISKS ASSOCIATED WITH USING THIS PROGRAM IN ADVANCE.\n\n\n",
-    "Enter the number '66550' to continue."
-);

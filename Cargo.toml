@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 lang_en = []
-lang_jp = []
+lang_ja = []
 
 [dependencies]
 aes-gcm = "0.10.3"
@@ -14,5 +14,6 @@ gtk4 = { version = "0.11.0", default-features = false, features = ["v4_10"] }
 glib = { version = "0.22.0", default-features = false }
 tree_magic_mini = "3.2.2"
 urlencoding = "2.1.3"
+base64 = "0.22.1"
 zune-png = "0.5.2"
-zune-jpeg = { version = "0.5.15", default-features = false }
+zune-jpeg = "0.5.15"
