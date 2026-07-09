@@ -58,8 +58,11 @@ pub struct LabelWithInternalText {
 }
 
 impl LabelWithInternalText {
-    pub fn new(label: gtk4::Label, text: String) -> Self {
-        Self { label, text }
+    pub fn new(label: gtk4::Label) -> Self {
+        Self {
+            label,
+            text: String::new(),
+        }
     }
 
     pub fn get_itext(&self) -> &String {
@@ -176,7 +179,7 @@ impl ImgDecodeItem {
 
 pub struct ImgDecodingController {
     pub queue: BTreeMap<u32, ImgDecodeItem>,
-    pub image_provider: BTreeMap<u32, Rc<gtk4::Picture>>,
+    pub image_provider: BTreeMap<u32, (Rc<gtk4::Picture>, Rc<gtk4::Grid>)>,
     pub is_processing: bool,
     cindex: u32,
 }
@@ -196,12 +199,13 @@ impl ImgDecodingController {
         img_type: IDCSImageType,
         img_data: Vec<u8>,
         iviewer: Rc<gtk4::Picture>,
+        grid: Rc<gtk4::Grid>,
     ) {
         let curr_index = self.cindex;
         iviewer.add_css_class(&curr_index.to_string());
         self.queue
             .insert(curr_index, ImgDecodeItem::new(img_type, img_data));
-        self.image_provider.insert(curr_index, iviewer);
+        self.image_provider.insert(curr_index, (iviewer, grid));
         if self.cindex == u32::MAX {
             self.cindex = 0;
         } else {

@@ -25,9 +25,9 @@ use std::rc::Rc;
 
 mod tools;
 use tools::*;
-
-use crate::types::*;
 mod types;
+use types::*;
+mod lang;
 mod vault;
 
 fn open_main(application: &gtk4::Application) {
@@ -51,7 +51,7 @@ fn open_main(application: &gtk4::Application) {
         move |_| {
             let info_window = gtk4::AboutDialog::new();
             info_window.set_application(Some(&application));
-            info_window.set_title(Some("About BaseAES"));
+            info_window.set_title(Some(lang::text::home::INFO_TITLE));
             info_window.set_size_request(160, 400);
             info_window.set_resizable(false);
 
@@ -61,16 +61,17 @@ fn open_main(application: &gtk4::Application) {
             let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
 
             let info_title = gtk4::Label::new(None);
-            info_title.set_markup("<b>BaseAES 1.1.0 (Release version)</b>");
+            info_title.set_markup("<b>BaseAES 1.2.0 (Release version)</b>");
             info_title.add_css_class("big");
             info_grid.attach(&info_title, 1, 1, 1, 1);
 
-            let info_text = gtk4::Label::new(Some(ABOUT_APP_TEXT));
+            let info_text = gtk4::Label::new(Some(lang::text::home::INFO_DESC));
+            info_text.set_wrap_mode(gdk::pango::WrapMode::Word);
             info_grid.attach(&info_text, 1, 2, 1, 1);
 
             let info_gh = gtk4::LinkButton::with_label(
                 "https://github.com/7654jp/BaseAES",
-                "View repository (GitHub)",
+                lang::text::home::INFO_VIEW_REPO,
             );
             info_gh.add_css_class("big");
             info_grid.attach(&info_gh, 1, 3, 1, 1);
@@ -105,17 +106,17 @@ fn open_main(application: &gtk4::Application) {
     } else {
         show_alert(
             window.as_ref(),
-            "Error",
-            "Failed to get display.\nStylesheet is disabled.",
+            lang::text::generic::ERROR,
+            lang::text::home::GET_DISPLAY_FAILED,
         );
     }
 
     // Master vault location viewer
-    let master_location_desc = gtk4::Label::new(Some("Master:"));
+    let master_location_desc = gtk4::Label::new(Some(lang::text::home::MAST_LOCATION_DESC));
     grid.attach(&master_location_desc, 1, 3, 1, 1);
     let master_location_label = Rc::new(
         gtk4::Entry::builder()
-            .text(get_vault_path().unwrap_or(String::from("(Failed to retrieve the default path)")))
+            .text(get_vault_path().unwrap_or(String::from(lang::text::home::MAST_LOCATION_PH)))
             .editable(false)
             .build(),
     );
@@ -124,7 +125,7 @@ fn open_main(application: &gtk4::Application) {
     // Master vault location changer
     let master_location_button = gtk4::MenuButton::builder()
         .direction(gtk4::ArrowType::Down)
-        .label("Change")
+        .label(lang::text::home::MAST_LOCATION_CHANGE)
         .build();
 
     let mlc_popover = Rc::new(
@@ -145,14 +146,14 @@ fn open_main(application: &gtk4::Application) {
         .orientation(gtk4::Orientation::Vertical)
         .build();
 
-    let change_button = gtk4::Button::with_label("Select from file");
+    let change_button = gtk4::Button::with_label(lang::text::home::MAST_LOCATION_SELECT);
 
     let window_lrc = Rc::clone(&window);
     let mastlabel_lrc = Rc::clone(&master_location_label);
     change_button.connect_clicked(move |_| {
         let mastersel_dialog = gtk4::FileDialog::builder()
             .modal(true)
-            .title("Select the master vault...")
+            .title(lang::text::home::MAST_LOCATION_SELECT_TITLE)
             .build();
 
         let window_src = Rc::clone(&window_lrc);
@@ -178,7 +179,7 @@ fn open_main(application: &gtk4::Application) {
     });
     mlc_vbox.append(&change_button);
 
-    let create_button = gtk4::Button::with_label("Create new master");
+    let create_button = gtk4::Button::with_label(lang::text::home::MAST_LOCATION_CREATE);
     let window_crc = Rc::clone(&window);
     let application_clone = application.clone();
     let mastlabel_crc = Rc::clone(&master_location_label);
@@ -205,7 +206,7 @@ fn open_main(application: &gtk4::Application) {
         gtk4::Image::from_pixbuf(get_pixbuf_from_png_u8(include_bytes!("images/add.png")).as_ref());
     abimg.set_size_request(48, 48);
     abbox.append(&abimg);
-    let ablabel = gtk4::Label::new(Some("Add new vault"));
+    let ablabel = gtk4::Label::new(Some(lang::text::home::ADD_NEW_VAULT));
     abbox.append(&ablabel);
     add_button.set_child(Some(&abbox));
     // Inline function
@@ -218,18 +219,18 @@ fn open_main(application: &gtk4::Application) {
             // Create window and box
             let nv_window = gtk4::Window::new();
             nv_window.set_application(Some(&application));
-            nv_window.set_title(Some("Add new vault..."));
+            nv_window.set_title(Some(lang::text::home::ADD_NEW_VAULT));
             let nv_grid = grid_builder(8, 8, 8, 8, 8, 8).build();
 
             // Name label
-            let nv_name_label = gtk4::Label::new(Some("Vault Name:"));
+            let nv_name_label = gtk4::Label::new(Some(lang::text::home::ADD_VAULT_NAME));
             nv_grid.attach(&nv_name_label, 1, 1, 2, 1);
             // Name input box
             let nv_name_box = gtk4::Entry::new();
             nv_name_box.set_size_request(120, 24);
             nv_grid.attach(&nv_name_box, 3, 1, 2, 1);
             // Password label
-            let nv_pass_label = gtk4::Label::new(Some("Vault Password:"));
+            let nv_pass_label = gtk4::Label::new(Some(lang::text::home::ADD_VAULT_PW));
             nv_grid.attach(&nv_pass_label, 1, 2, 2, 1);
             // Password input box
             let nv_pass_box = gtk4::PasswordEntry::new();
@@ -251,12 +252,11 @@ fn open_main(application: &gtk4::Application) {
                     if vname.contains("^") || vname.contains(",") {
                         show_alert(
                             &nv_window,
-                            "Error",
-                            "Vault name cannot contain  ' ^ '  or  ' , '  .",
+                            lang::text::generic::ERROR,
+                            lang::text::home::ADD_NAME_CHARERR,
                         );
                         return;
                     }
-                    nv_window.close();
                     // Get master data
                     let mvname = match master_read_vname(&nv_window, mastlabel_oarc.text().as_str())
                     {
@@ -273,21 +273,22 @@ fn open_main(application: &gtk4::Application) {
                     if &[mvname_info[0]] == b"d" {
                         // Default encryption
                         let mvname_nonce = mvname_info[1..13].try_into().unwrap();
-                        let vname_plain_opt = decrypt_aes(
-                            Some(aawindow.as_ref()),
-                            &mvname_cipher,
-                            mvname_nonce,
-                            true,
-                        );
+                        let vname_plain_opt =
+                            decrypt_aes(Some(&nv_window), &mvname_cipher, mvname_nonce, false);
                         if vname_plain_opt.is_none() {
+                            show_alert(
+                                &nv_window,
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_DECRYPTION_FAILED,
+                            );
                             return;
                         }
                         let vname_plain_str_opt = String::from_utf8(vname_plain_opt.unwrap());
                         if vname_plain_str_opt.is_err() {
                             show_alert(
-                                aawindow.as_ref(),
-                                "Error",
-                                "Could not parse 'vname' as string.",
+                                &nv_window,
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_PARSE_FAILED,
                             );
                             return;
                         };
@@ -296,17 +297,16 @@ fn open_main(application: &gtk4::Application) {
                         let mut vault_count: i16 = 0;
                         // Vault name validation check
                         if vname_plain_str.contains(",") {
-                            if let Some(vc) = check_vault_name(
-                                Rc::clone(&aawindow),
-                                &vname_plain_str,
-                                Rc::clone(&vname),
-                            ) {
+                            if let Some(vc) =
+                                check_vault_name(&nv_window, &vname_plain_str, Rc::clone(&vname))
+                            {
                                 vault_count = vc;
                             } else {
                                 return;
                             }
                         }
                         vcomm_index.borrow_mut().set(vault_count);
+                        nv_window.close();
 
                         // Given:
                         // (edited full vname) and (password encrypted vdata)
@@ -320,8 +320,8 @@ fn open_main(application: &gtk4::Application) {
                             None => {
                                 show_alert(
                                     aawindow.as_ref(),
-                                    "Error",
-                                    "Failed to generate the new vault.",
+                                    lang::text::generic::ERROR,
+                                    lang::text::home::ADD_GENERATE_FAILED,
                                 );
                                 return;
                             }
@@ -338,8 +338,8 @@ fn open_main(application: &gtk4::Application) {
                                 None => {
                                     show_alert(
                                         aawindow.as_ref(),
-                                        "Error",
-                                        "Failed to encrypt 'full-vname'.",
+                                        lang::text::generic::ERROR,
+                                        lang::text::home::ADD_VNAME_ENC_FAILED,
                                     );
                                     return;
                                 }
@@ -377,8 +377,8 @@ fn open_main(application: &gtk4::Application) {
                                 } else {
                                     show_alert(
                                         aaawindow.as_ref(),
-                                        "Error",
-                                        "Failed to encrypt master vault.",
+                                        lang::text::generic::ERROR,
+                                        lang::text::generic::MAST_ENCRYPTION_FAILED,
                                     );
                                 }
                             });
@@ -392,7 +392,7 @@ fn open_main(application: &gtk4::Application) {
                         // Ask password window
                         let pw_window = gtk4::Window::new();
                         pw_window.set_application(Some(&application));
-                        pw_window.set_title(Some("Master password"));
+                        pw_window.set_title(Some(lang::text::generic::MAST_PW_TITLE));
                         pw_window.set_size_request(216, 84);
                         pw_window.set_resizable(false);
 
@@ -400,8 +400,7 @@ fn open_main(application: &gtk4::Application) {
                         let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
 
                         // Ask label
-                        let pw_label =
-                            gtk4::Label::new(Some("Enter password to open master vault."));
+                        let pw_label = gtk4::Label::new(Some(lang::text::generic::MAST_PW_DESC));
                         pw_grid.attach(&pw_label, 1, 1, 3, 1);
                         // Input box
                         let pw_box = gtk4::PasswordEntry::new();
@@ -417,6 +416,8 @@ fn open_main(application: &gtk4::Application) {
                         pw_ok_button.connect_clicked(clone!(
                             #[weak]
                             pw_window,
+                            #[weak]
+                            nv_window,
                             move |_| {
                                 let user_key = Rc::new(hashify_sha256(pw_box.text().to_string()));
                                 let vname_plain_opt = decrypt_aes_with_key(
@@ -429,8 +430,8 @@ fn open_main(application: &gtk4::Application) {
                                 if vname_plain_opt.is_none() {
                                     show_alert(
                                         &pw_window,
-                                        "Error",
-                                        "Failed to decrypt master vault.",
+                                        lang::text::generic::ERROR,
+                                        lang::text::generic::VNAME_DECRYPTION_FAILED,
                                     );
                                     return;
                                 }
@@ -438,9 +439,9 @@ fn open_main(application: &gtk4::Application) {
                                 let sbase_data = String::from_utf8(vname_plain_opt.unwrap());
                                 if sbase_data.is_err() {
                                     show_alert(
-                                        aaawindow.as_ref(),
-                                        "Error",
-                                        "Could not parse 'vname' as string.",
+                                        &nv_window,
+                                        lang::text::generic::ERROR,
+                                        lang::text::generic::VNAME_PARSE_FAILED,
                                     );
                                     return;
                                 }
@@ -449,17 +450,16 @@ fn open_main(application: &gtk4::Application) {
                                 let mut vault_count: i16 = 0;
                                 // Vault name validation check
                                 if base_data.contains(",") {
-                                    if let Some(vc) = check_vault_name(
-                                        Rc::clone(&aaawindow),
-                                        &base_data,
-                                        Rc::clone(&vname),
-                                    ) {
+                                    if let Some(vc) =
+                                        check_vault_name(&nv_window, &base_data, Rc::clone(&vname))
+                                    {
                                         vault_count = vc;
                                     } else {
                                         return;
                                     }
                                 }
                                 vcommindex.borrow_mut().set(vault_count);
+                                nv_window.close();
 
                                 // Given:
                                 // (edited full vname) and (password encrypted vdata)
@@ -473,8 +473,8 @@ fn open_main(application: &gtk4::Application) {
                                     None => {
                                         show_alert(
                                             aaawindow.as_ref(),
-                                            "Error",
-                                            "Failed to generate the new vault.",
+                                            lang::text::generic::ERROR,
+                                            lang::text::home::ADD_GENERATE_FAILED,
                                         );
                                         return;
                                     }
@@ -494,8 +494,8 @@ fn open_main(application: &gtk4::Application) {
                                     None => {
                                         show_alert(
                                             aaawindow.as_ref(),
-                                            "Error",
-                                            "Failed to encrypt 'full-vname'.",
+                                            lang::text::generic::ERROR,
+                                            lang::text::home::ADD_VNAME_ENC_FAILED,
                                         );
                                         return;
                                     }
@@ -535,8 +535,8 @@ fn open_main(application: &gtk4::Application) {
                                         } else {
                                             show_alert(
                                                 aaaawindow.as_ref(),
-                                                "Error",
-                                                "Failed to encrypt master vault.",
+                                                lang::text::generic::ERROR,
+                                                lang::text::generic::MAST_ENCRYPTION_FAILED,
                                             );
                                         }
                                     });
@@ -553,7 +553,11 @@ fn open_main(application: &gtk4::Application) {
                         pw_window.set_modal(true);
                         pw_window.present();
                     } else {
-                        show_alert(aawindow.as_ref(), "Error", "Could not parse vault data.");
+                        show_alert(
+                            aawindow.as_ref(),
+                            lang::text::generic::ERROR,
+                            lang::text::home::ADD_VAULT_PARSE_FAILED,
+                        );
                         return;
                     }
                 }
@@ -577,7 +581,7 @@ fn open_main(application: &gtk4::Application) {
     );
     obimg.set_size_request(48, 48);
     obbox.append(&obimg);
-    let oblabel = gtk4::Label::new(Some("Open vault"));
+    let oblabel = gtk4::Label::new(Some(lang::text::home::OPEN_VAULT));
     obbox.append(&oblabel);
     open_button.set_child(Some(&obbox));
     // Inline function
@@ -589,7 +593,7 @@ fn open_main(application: &gtk4::Application) {
         move |_| {
             let selwindow = Rc::new(gtk4::Window::new());
             selwindow.set_application(Some(&application));
-            selwindow.set_title(Some("Select vault..."));
+            selwindow.set_title(Some(lang::text::home::OPEN_TITLE));
             selwindow.set_size_request(320, 240);
             selwindow.set_modal(true);
 
@@ -598,11 +602,8 @@ fn open_main(application: &gtk4::Application) {
                 .spacing(8)
                 .margin_start(12)
                 .margin_end(12)
+                .margin_top(16)
                 .build();
-
-            let seltitle = gtk4::Label::new(Some("Select vault to open:"));
-            seltitle.add_css_class("big");
-            selvbox.append(&seltitle);
 
             // Show vault list widget family
             let selscroll = gtk4::ScrolledWindow::new();
@@ -634,11 +635,20 @@ fn open_main(application: &gtk4::Application) {
                     false,
                 );
                 if vname_opt.is_none() {
-                    show_alert(selwindow.as_ref(), "Error", "Failed to decrypt 'vname'.");
+                    show_alert(
+                        selwindow.as_ref(),
+                        lang::text::generic::ERROR,
+                        lang::text::generic::VNAME_DECRYPTION_FAILED,
+                    );
                     return;
                 }
                 let vname_str_res = String::from_utf8(vname_opt.unwrap());
                 if vname_str_res.is_err() {
+                    show_alert(
+                        selwindow.as_ref(),
+                        lang::text::generic::ERROR,
+                        lang::text::generic::VNAME_PARSE_FAILED,
+                    );
                     return;
                 }
                 let vname_str = Rc::new(vname_str_res.unwrap());
@@ -662,8 +672,8 @@ fn open_main(application: &gtk4::Application) {
                         } else {
                             show_alert(
                                 oowindow.as_ref(),
-                                "Error",
-                                "Failed to encrypt master vault.",
+                                lang::text::generic::ERROR,
+                                lang::text::generic::MAST_ENCRYPTION_FAILED,
                             );
                         }
                     });
@@ -686,7 +696,7 @@ fn open_main(application: &gtk4::Application) {
                         let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
                         std::thread::spawn(move || {
                             let vault_opt = master_read_vault_at(
-                                None::<&gtk4::Window>,
+                                gtk4::Window::NONE,
                                 &mastpath,
                                 vcount_at as usize,
                             );
@@ -695,7 +705,7 @@ fn open_main(application: &gtk4::Application) {
                             }
                             let (vault_nonce, vault_data) = vault_opt.unwrap();
                             if let Some(demast_vault) =
-                                decrypt_aes(None::<&gtk4::Window>, &vault_data, vault_nonce, true)
+                                decrypt_aes(gtk4::Window::NONE, &vault_data, vault_nonce, true)
                             {
                                 let _ = v_sender.send(demast_vault);
                             } else {
@@ -719,7 +729,7 @@ fn open_main(application: &gtk4::Application) {
                 // Ask password window
                 let pw_window = gtk4::Window::new();
                 pw_window.set_application(Some(oapprc.as_ref()));
-                pw_window.set_title(Some("Master password"));
+                pw_window.set_title(Some(lang::text::generic::MAST_PW_TITLE));
                 pw_window.set_size_request(216, 84);
                 pw_window.set_resizable(false);
 
@@ -727,7 +737,7 @@ fn open_main(application: &gtk4::Application) {
                 let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
 
                 // Ask label
-                let pw_label = gtk4::Label::new(Some("Enter password to open master vault."));
+                let pw_label = gtk4::Label::new(Some(lang::text::generic::MAST_PW_DESC));
                 pw_grid.attach(&pw_label, 1, 1, 3, 1);
                 // Input box
                 let pw_boxr = gtk4::PasswordEntry::new();
@@ -752,12 +762,21 @@ fn open_main(application: &gtk4::Application) {
                             false,
                         );
                         if vname_opt.is_none() {
-                            show_alert(&pw_window, "Error", "Failed to decrypt 'vname'.");
+                            show_alert(
+                                &pw_window,
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_DECRYPTION_FAILED,
+                            );
                             return;
                         }
                         pw_window.close();
                         let vname_str_res = String::from_utf8(vname_opt.unwrap());
                         if vname_str_res.is_err() {
+                            show_alert(
+                                selwindow_rc.as_ref(),
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_PARSE_FAILED,
+                            );
                             return;
                         }
                         let vname_str = Rc::new(vname_str_res.unwrap());
@@ -787,8 +806,8 @@ fn open_main(application: &gtk4::Application) {
                                 } else {
                                     show_alert(
                                         ooowindow.as_ref(),
-                                        "Error",
-                                        "Failed to encrypt master vault.",
+                                        lang::text::generic::ERROR,
+                                        lang::text::generic::MAST_ENCRYPTION_FAILED,
                                     );
                                 }
                             });
@@ -813,7 +832,7 @@ fn open_main(application: &gtk4::Application) {
                                 let (v_sender, v_receiver) = std::sync::mpsc::channel::<Vec<u8>>();
                                 std::thread::spawn(move || {
                                     let vault_opt = master_read_vault_at(
-                                        None::<&gtk4::Window>,
+                                        gtk4::Window::NONE,
                                         &mastpath,
                                         vcount_at as usize,
                                     );
@@ -822,7 +841,7 @@ fn open_main(application: &gtk4::Application) {
                                     }
                                     let (vault_nonce, vault_data) = vault_opt.unwrap();
                                     if let Some(demast_vault) = decrypt_aes_with_key(
-                                        None::<&gtk4::Window>,
+                                        gtk4::Window::NONE,
                                         &vault_data,
                                         vault_nonce,
                                         &mkey_raw,
@@ -852,7 +871,11 @@ fn open_main(application: &gtk4::Application) {
                 pw_window.set_child(Some(&pw_grid));
                 pw_window.present();
             } else {
-                show_alert(selwindow.as_ref(), "Error", "Could not parse vault data.");
+                show_alert(
+                    selwindow.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::home::ADD_VAULT_PARSE_FAILED,
+                );
                 return;
             }
         }
@@ -869,7 +892,7 @@ fn open_main(application: &gtk4::Application) {
     );
     dbimg.set_size_request(48, 48);
     dbbox.append(&dbimg);
-    let dblabel = gtk4::Label::new(Some("Delete vault"));
+    let dblabel = gtk4::Label::new(Some(lang::text::home::DELETE_VAULT));
     dbbox.append(&dblabel);
     delete_button.set_child(Some(&dbbox));
     // Inline function
@@ -881,17 +904,16 @@ fn open_main(application: &gtk4::Application) {
         move |_| {
             let selwindow = Rc::new(gtk4::Window::new());
             selwindow.set_application(Some(&application));
-            selwindow.set_title(Some("Select vault..."));
+            selwindow.set_title(Some(lang::text::home::DELETE_TITLE));
             selwindow.set_size_request(320, 240);
             selwindow.set_modal(true);
 
-            let selvbox = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-            selvbox.set_margin_start(12);
-            selvbox.set_margin_end(12);
-
-            let seltitle = gtk4::Label::new(Some("Select vault to delete:"));
-            seltitle.add_css_class("big");
-            selvbox.append(&seltitle);
+            let selvbox = gtk4::Box::builder()
+                .orientation(gtk4::Orientation::Vertical)
+                .spacing(8)
+                .margin_start(12)
+                .margin_end(12)
+                .build();
 
             // Show vault list widget family
             let selscroll = gtk4::ScrolledWindow::new();
@@ -924,8 +946,8 @@ fn open_main(application: &gtk4::Application) {
                 if vname_str_res.is_err() {
                     show_alert(
                         selwindow.as_ref(),
-                        "Error",
-                        "Failed to parse 'vname' as string.",
+                        lang::text::generic::ERROR,
+                        lang::text::generic::VNAME_PARSE_FAILED,
                     );
                     return;
                 }
@@ -958,8 +980,8 @@ fn open_main(application: &gtk4::Application) {
                         selwindow_rc.close();
                         show_alert(
                             ddwindow.as_ref(),
-                            "Vault deletion complete",
-                            "Deletion command was issued for the selected vault.",
+                            lang::text::home::DELETE_COMP_TITLE,
+                            lang::text::home::DELETE_COMP_DESC,
                         );
                     });
 
@@ -980,14 +1002,14 @@ fn open_main(application: &gtk4::Application) {
                 // Ask password window
                 let pw_window = Rc::new(gtk4::Window::new());
                 pw_window.set_application(Some(&application));
-                pw_window.set_title(Some("Master password"));
+                pw_window.set_title(Some(lang::text::generic::MAST_PW_TITLE));
                 pw_window.set_size_request(216, 84);
                 pw_window.set_resizable(false);
 
                 // Ask password grid
                 let pw_grid = grid_builder(6, 6, 12, 12, 8, 8).build();
                 // Ask label
-                let pw_label = gtk4::Label::new(Some("Enter password to open master vault."));
+                let pw_label = gtk4::Label::new(Some(lang::text::generic::MAST_PW_DESC));
                 pw_grid.attach(&pw_label, 1, 1, 3, 1);
                 // Input box
                 let pw_box = gtk4::PasswordEntry::new();
@@ -1015,8 +1037,8 @@ fn open_main(application: &gtk4::Application) {
                         if vname_data_opt.is_none() {
                             show_alert(
                                 pwwindow_rc.as_ref(),
-                                "Error",
-                                "Failed to decrypt 'vname' .",
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_DECRYPTION_FAILED,
                             );
                             return;
                         }
@@ -1026,8 +1048,8 @@ fn open_main(application: &gtk4::Application) {
                         if vname_str_res.is_err() {
                             show_alert(
                                 selwindow_rc.as_ref(),
-                                "Error",
-                                "Failed to parse 'vname' as string.",
+                                lang::text::generic::ERROR,
+                                lang::text::generic::VNAME_PARSE_FAILED,
                             );
                             return;
                         }
@@ -1064,8 +1086,8 @@ fn open_main(application: &gtk4::Application) {
                                 selwindow_drc.close();
                                 show_alert(
                                     dddwindow.as_ref(),
-                                    "Vault deletion complete",
-                                    "Deletion command was issued for the selected vault.",
+                                    lang::text::home::DELETE_COMP_TITLE,
+                                    lang::text::home::DELETE_COMP_DESC,
                                 );
                             });
 
@@ -1089,7 +1111,11 @@ fn open_main(application: &gtk4::Application) {
                 pw_window.set_modal(true);
                 pw_window.present();
             } else {
-                show_alert(selwindow.as_ref(), "Error", "Could not parse vault data.");
+                show_alert(
+                    selwindow.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::home::ADD_VAULT_PARSE_FAILED,
+                );
                 return;
             }
         }
@@ -1113,7 +1139,7 @@ fn open_main(application: &gtk4::Application) {
     } else {
         show_alert(
             window.as_ref(),
-            "Warning",
+            lang::text::generic::ERROR,
             "Failed to detect the default path to the master vault.",
         );
     };
@@ -1127,12 +1153,3 @@ fn main() {
     application.connect_activate(open_main);
     application.run();
 }
-
-const ABOUT_APP_TEXT: &str = concat!(
-    "BaseAES is a simple filesystem-like\n",
-    "  vault system with strong encryption.\n\n",
-    "Developed by @7654jp\n\n",
-    "This software is licensed under the\n",
-    "  version 3 of the GNU General Public License.\n",
-    "For details, see LICENSE file in the repository."
-);
