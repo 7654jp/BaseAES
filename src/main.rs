@@ -61,7 +61,7 @@ fn open_main(application: &gtk4::Application) {
             let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
 
             let info_title = gtk4::Label::new(None);
-            info_title.set_markup("<b>BaseAES 1.2.0 (Release version)</b>");
+            info_title.set_markup("<b>BaseAES 1.3.0 (Release version)</b>");
             info_title.add_css_class("big");
             info_grid.attach(&info_title, 1, 1, 1, 1);
 
@@ -85,14 +85,21 @@ fn open_main(application: &gtk4::Application) {
     header_bar.pack_end(&info_button);
     window.set_titlebar(Some(&header_bar));
 
-    // Main grid
-    let grid = grid_builder(6, 8, 12, 12, 12, 12).build();
+    // Main vbox
+    let vbox = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .margin_top(8)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .spacing(8)
+        .build();
 
     // title label
     let title_label = gtk4::Label::new(None);
     title_label.set_markup("<b>BaseAES Vault Manager</b>");
     title_label.add_css_class("big");
-    grid.attach(&title_label, 1, 1, 6, 1);
+    vbox.append(&title_label);
 
     // Enable CSS
     if let Some(display) = gdk::Display::default() {
@@ -124,16 +131,21 @@ fn open_main(application: &gtk4::Application) {
         );
     }
 
+    // hbox for master vault UI
+    let mast_hbox = gtk4::CenterBox::new();
+
     // Master vault location viewer
     let master_location_desc = gtk4::Label::new(Some(lang::text::home::MAST_LOCATION_DESC));
-    grid.attach(&master_location_desc, 1, 3, 1, 1);
+    mast_hbox.set_start_widget(Some(&master_location_desc));
     let master_location_label = Rc::new(
         gtk4::Entry::builder()
             .text(get_vault_path().unwrap_or(String::from(lang::text::home::MAST_LOCATION_PH)))
             .editable(false)
+            .width_request(192)
+            .height_request(32)
             .build(),
     );
-    grid.attach(master_location_label.as_ref(), 2, 3, 3, 1);
+    mast_hbox.set_center_widget(Some(master_location_label.as_ref()));
 
     // Master vault location changer
     let master_location_button = gtk4::MenuButton::builder()
@@ -148,7 +160,7 @@ fn open_main(application: &gtk4::Application) {
             .margin_start(6)
             .margin_end(6)
             .vexpand(true)
-            .halign(gtk4::Align::Start)
+            .halign(gtk4::Align::Center)
             .build(),
     );
 
@@ -208,11 +220,14 @@ fn open_main(application: &gtk4::Application) {
 
     mlc_popover.set_child(Some(&mlc_vbox));
     master_location_button.set_popover(Some(mlc_popover.as_ref()));
-    grid.attach(&master_location_button, 5, 3, 2, 1);
+    mast_hbox.set_end_widget(Some(&master_location_button));
+
+    // hbox for buttons
+    let btn_hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
 
     // Add vault button
     let add_button = gtk4::Button::new();
-    add_button.set_size_request(120, 96);
+    add_button.set_size_request(144, 96);
     // Inside Add button
     let abbox = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     let abimg =
@@ -582,11 +597,11 @@ fn open_main(application: &gtk4::Application) {
             nv_window.present();
         }
     ));
-    grid.attach(&add_button, 1, 2, 2, 1);
+    btn_hbox.append(&add_button);
 
     // Open vault button
     let open_button = gtk4::Button::new();
-    open_button.set_size_request(120, 96);
+    open_button.set_size_request(144, 96);
     // Inside Open button
     let obbox = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     let obimg = gtk4::Image::from_pixbuf(
@@ -893,11 +908,11 @@ fn open_main(application: &gtk4::Application) {
             }
         }
     ));
-    grid.attach(&open_button, 3, 2, 2, 1);
+    btn_hbox.append(&open_button);
 
     // Delete vault button
     let delete_button = gtk4::Button::new();
-    delete_button.set_size_request(120, 96);
+    delete_button.set_size_request(144, 96);
     // Inside Delete button
     let dbbox = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     let dbimg = gtk4::Image::from_pixbuf(
@@ -1133,9 +1148,11 @@ fn open_main(application: &gtk4::Application) {
             }
         }
     ));
-    grid.attach(&delete_button, 5, 2, 2, 1);
+    btn_hbox.append(&delete_button);
+    vbox.append(&btn_hbox);
+    vbox.append(&mast_hbox);
 
-    window.set_child(Some(&grid));
+    window.set_child(Some(&vbox));
     window.present();
 
     // Check if this is fresh

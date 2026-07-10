@@ -289,11 +289,11 @@ fn open_vault(
     item_viewer_titlei.set_size_request(320, 48);
     item_viewer_titlei.set_hexpand(true);
     let item_viewer_titler = LabelWithInternalText::new(item_viewer_titlei);
-    item_grid.attach(&*item_viewer_titler, 1, 1, 1, 1);
+    item_grid.attach(&*item_viewer_titler, 1, 1, 2, 1);
     let item_viewer_title = Rc::new(RefCell::new(item_viewer_titler));
 
     let item_grid_separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-    item_grid.attach(&item_grid_separator, 1, 2, 2, 1);
+    item_grid.attach(&item_grid_separator, 1, 2, 3, 1);
 
     // Item viewer (window / inner grid)
     let iviewer_windowr = gtk4::ScrolledWindow::builder()
@@ -303,7 +303,7 @@ fn open_vault(
         .vexpand(true)
         .build();
     iviewer_windowr.set_size_request(400, 400);
-    item_grid.attach(&iviewer_windowr, 1, 3, 2, 1);
+    item_grid.attach(&iviewer_windowr, 1, 3, 3, 1);
     let item_viewer = Rc::new(iviewer_windowr);
 
     // Save item button
@@ -336,7 +336,92 @@ fn open_vault(
         iviewer_title_ras.borrow_mut().set_text(&nochanges_title);
         changed_ras.borrow_mut().set(true);
     });
-    item_grid.attach(&item_save_button, 2, 1, 1, 1);
+    item_grid.attach(&item_save_button, 3, 1, 1, 1);
+
+    // Show file info button
+    let show_finfo_button = gtk4::Button::with_label(lang::text::explorer::EXP_SHOW_FINFO);
+    show_finfo_button.set_size_request(96, 48);
+    show_finfo_button.set_hexpand(false);
+
+    // Rc suffix: _rfi
+    let iviewer_title_rfi = Rc::clone(&item_viewer_title);
+    let iviewer_rfi = Rc::clone(&item_viewer);
+    let vwindow_rfi = Rc::clone(&vault_window);
+    let vdata_rfi = Rc::clone(&vdata);
+    let app_rfi = Rc::clone(&application);
+    show_finfo_button.connect_clicked(move |_| {
+        let finfo_window = gtk4::Window::new();
+        finfo_window.set_application(Some(app_rfi.as_ref()));
+        finfo_window.set_title(Some(lang::text::explorer::EXP_SHOW_FINFO));
+        finfo_window.set_default_size(240, 160);
+        finfo_window.set_modal(true);
+
+        let finfo_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
+
+        // Get item key
+        let item_text = iviewer_title_rfi.borrow().get_itext().to_owned();
+        if !item_text.contains(":") {
+            return;
+        }
+        let (item_key, filename) = match item_text.split_once(":") {
+            Some(info) => info,
+            None => {
+                show_alert(
+                    vwindow_rfi.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::explorer::EXP_MOVE_FINFO_ERR,
+                );
+                return;
+            }
+        };
+        let mut info = String::new();
+
+        // Get file name
+        info.push_str("File name: ");
+        info.push_str(filename);
+        info.push_str("\n");
+        info.push_str("(Internal mgmt ID: ");
+        info.push_str(item_key);
+        info.push_str(")\n");
+
+        // Get file size
+        info.push_str("File size: ");
+        let dtext = if let Some(d) = vdata_rfi.borrow().get(&PathBuf::from(item_key)) {
+            let dlen = d.len();
+            if dlen < 1024 {
+                &(dlen.to_string() + " B")
+            } else if dlen < 1048576 {
+                &(round_below_1(dlen as f64 / 1024 as f64).to_string() + " KiB")
+            } else {
+                &(round_below_1(dlen as f64 / 1048576 as f64).to_string() + "MiB")
+            }
+        } else {
+            "(Failed to retrieve)"
+        };
+        info.push_str(dtext);
+        info.push_str("\n");
+
+        // Get image size if showing an image
+        if let Some(grid) = iviewer_rfi.child().unwrap().first_child()
+            && let Some(maybe_image) = grid.first_child()
+            && let Ok(_) = maybe_image.dynamic_cast::<gtk4::Picture>()
+        {
+            let (imgw, imgh) = grid.size_request();
+            info.push_str("\nImage width: ");
+            info.push_str(&imgw.to_string());
+            info.push_str("px");
+            info.push_str("\nImage height: ");
+            info.push_str(&imgh.to_string());
+            info.push_str("px");
+        }
+
+        let desc_label = gtk4::Label::new(Some(&info));
+        finfo_grid.attach(&desc_label, 1, 1, 1, 1);
+
+        finfo_window.set_child(Some(&finfo_grid));
+        finfo_window.present();
+    });
+    item_grid.attach(&show_finfo_button, 1, 4, 1, 1);
 
     // Control grid, left side of the vault window
     let control_grid = grid_builder(6, 12, 12, 12, 8, 8).vexpand(true).build();
@@ -655,7 +740,7 @@ fn open_vault(
     });
     vaf_vbox.append(&vaf_importb);
 
-    let vaf_b64importb = gtk4::Button::with_label("Import from Base64");
+    let vaf_b64importb = gtk4::Button::with_label(lang::text::explorer::EXP_IMPORT_BASE64);
     vaf_importb.set_size_request(96, 40);
 
     // Rc suffix: _rib
@@ -673,28 +758,27 @@ fn open_vault(
         popover_rib.popdown();
         let b64input_window = Rc::new(gtk4::Window::new());
         b64input_window.set_application(Some(app_rib.as_ref()));
-        b64input_window.set_title(Some("Import from Base64"));
+        b64input_window.set_title(Some(lang::text::explorer::EXP_IMPORT_BASE64));
         b64input_window.set_default_size(320, 64);
         b64input_window.set_modal(true);
 
         let b64input_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
-        let b64input_fntitle = gtk4::Label::new(Some("Enter file name:"));
+        let b64input_fntitle = gtk4::Label::new(Some(lang::text::explorer::EXP_CREATE_DESC));
         b64input_grid.attach(&b64input_fntitle, 1, 1, 1, 1);
 
         let b64input_filename = gtk4::Entry::new();
         b64input_filename.set_size_request(160, 28);
         b64input_grid.attach(&b64input_filename, 2, 1, 3, 1);
 
-        let b64input_b64title = gtk4::Label::new(Some("Enter Base64 below:"));
+        let b64input_b64title =
+            gtk4::Label::new(Some(lang::text::explorer::EXP_IMPORT_BASE64_DESC));
         b64input_grid.attach(&b64input_b64title, 1, 2, 1, 1);
 
         let b64input_entry = gtk4::Entry::new();
         b64input_grid.attach(&b64input_entry, 1, 3, 4, 1);
 
-        let b64input_desc = gtk4::Label::new(Some(
-            "This prompt support:\nRaw Base64 (E.g. TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (E.g. data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)",
-        ));
+        let b64input_desc = gtk4::Label::new(Some(lang::text::explorer::EXP_IMPORT_BASE64_EX));
         b64input_grid.attach(&b64input_desc, 1, 4, 3, 3);
 
         let b64input_okbtn = gtk4::Button::with_label("OK");
@@ -721,7 +805,7 @@ fn open_vault(
                 // File name filtering
                 let filename = b64input_filename.text().to_string();
                 if let Err(emsg) = filename_check(&filename) {
-                    show_alert(b64window_rib2.as_ref(), "Error", &emsg);
+                    show_alert(b64window_rib2.as_ref(), lang::text::generic::ERROR, &emsg);
                     return;
                 }
 
@@ -739,8 +823,8 @@ fn open_vault(
                     if name == &filename {
                         show_alert(
                             b64window_rib2.as_ref(),
-                            "Alert",
-                            "The filename cannot be the same.",
+                            lang::text::generic::ALERT,
+                            lang::text::tools::FILENAME_DUPLICATED,
                         );
                         return;
                     }
@@ -786,10 +870,14 @@ fn open_vault(
                     Rc::clone(&vindex_rib2),
                     Rc::clone(&vdata_rib2),
                     ipath_rc,
-                    Rc::clone(&idcs_rib2)
+                    Rc::clone(&idcs_rib2),
                 );
             } else {
-                show_alert(b64window_rib2.as_ref(), "Error", "Failed to parse Base64 text.");
+                show_alert(
+                    b64window_rib2.as_ref(),
+                    lang::text::generic::ERROR,
+                    lang::text::explorer::EXP_IMPORT_BASE64_INVALID,
+                );
             }
         });
         b64input_grid.attach(&b64input_okbtn, 4, 4, 1, 1);
@@ -926,10 +1014,7 @@ fn open_vault(
     let vwindow_rri = Rc::clone(&vault_window);
     let iviewer_rri = Rc::clone(&item_viewer);
     vault_rename_item.connect_clicked(move |_| {
-        let mut viewer_id = iviewer_title_rri.borrow().get_itext().to_owned();
-        if viewer_id.ends_with("^") {
-            viewer_id.pop();
-        }
+        let viewer_id = iviewer_title_rri.borrow().get_itext().to_owned();
         let (vfileid, vtitle) = match viewer_id.split_once(":") {
             Some(viewerid_sp) => viewerid_sp,
             None => {
@@ -1055,7 +1140,7 @@ fn open_vault(
             }
             iviewer_title_rri2
                 .borrow_mut()
-                .set_itext(itext.replace(curr_title, &format!("{newname}^")));
+                .set_itext(itext.replace(curr_title, &format!("{newname}")));
 
             vri_window_rri2.close();
         });
@@ -1264,10 +1349,7 @@ fn open_vault(
     let vdata_roe = Rc::clone(&vdata);
     voc_export_item.connect_clicked(move |_| {
         voc_button_roe.popdown();
-        let mut filename = iviewer_title_roe.borrow().get_itext().to_owned();
-        if filename.ends_with("^") {
-            filename.pop();
-        }
+        let filename = iviewer_title_roe.borrow().get_itext().to_owned();
         let (fileid_str, title) = match filename.split_once(":") {
             Some(f) => f,
             None => {
@@ -1917,14 +1999,11 @@ pub fn get_files_from_vpath(
             let name_viewer_frc = Rc::clone(&name_viewer);
             let content_viewer_frc = Rc::clone(&content_viewer);
             lbutton.connect_clicked(move |_| {
-                let (inamep_str, mut fname) =
-                    match name_viewer_frc.borrow().get_itext().split_once(":") {
-                        Some(s) => (s.0.to_owned(), s.1.to_owned()),
-                        None => (String::new(), String::new()),
-                    };
-                if fname.ends_with("^") {
-                    fname.pop();
-                }
+                let (inamep_str, fname) = match name_viewer_frc.borrow().get_itext().split_once(":")
+                {
+                    Some(s) => (s.0.to_owned(), s.1.to_owned()),
+                    None => (String::new(), String::new()),
+                };
                 if inamep_str.starts_with("/")
                     && ipath_frc.as_os_str() == inamep_str.as_str()
                     && !fname.ends_with("bgsf")
@@ -1934,19 +2013,19 @@ pub fn get_files_from_vpath(
 
                 // Cancel drawing for the current
                 // If there're any image requesting to be shown
-                if let Some(child) = content_viewer_frc.child() {
-                    if let Some(gchild) = child.first_child() {
-                        for grid_child in gchild.observe_children().into_iter() {
-                            if grid_child.is_err() {
-                                continue;
-                            }
-                            if let Ok(image) = grid_child.unwrap().dynamic_cast::<gtk4::Image>() {
-                                if image.css_classes().len() == 1 {
-                                    let imgid: u32 =
-                                        str::parse(&image.css_classes()[0].clone()).unwrap();
-                                    idcs_frc.borrow_mut().queue.remove(&imgid);
-                                    idcs_frc.borrow_mut().image_provider.remove(&imgid);
-                                }
+                if let Some(child) = content_viewer_frc.child()
+                    && let Some(gchild) = child.first_child()
+                {
+                    for grid_child in gchild.observe_children().into_iter() {
+                        if grid_child.is_err() {
+                            continue;
+                        }
+                        if let Ok(image) = grid_child.unwrap().dynamic_cast::<gtk4::Picture>() {
+                            if image.css_classes().len() == 1 {
+                                let imgid: u32 =
+                                    str::parse(&image.css_classes()[0].clone()).unwrap();
+                                idcs_frc.borrow_mut().queue.remove(&imgid);
+                                idcs_frc.borrow_mut().image_provider.remove(&imgid);
                             }
                         }
                     }
@@ -2097,10 +2176,7 @@ fn vault_move_file(
     vexpath_rc: Rc<RefCell<EntryWithInternalText>>,
     iviewer_title_rc: Rc<RefCell<LabelWithInternalText>>,
 ) {
-    let mut fileinfo = iviewer_title_rc.borrow().get_itext().to_owned();
-    if fileinfo.ends_with("^") {
-        fileinfo.pop();
-    }
+    let fileinfo = iviewer_title_rc.borrow().get_itext().to_owned();
     let (fileid_str, filename) = match fileinfo.split_once(":") {
         Some((id, name)) => (id.to_owned(), name.to_owned()),
         None => {
@@ -2521,7 +2597,6 @@ fn get_item_viewer_grid(
                 .can_target(true)
                 .hexpand(true)
                 .vexpand(false)
-                .overflow(gtk4::Overflow::Visible)
                 .build(),
         );
 
@@ -2566,11 +2641,6 @@ fn get_item_viewer_grid(
 
         let ititle_label_rc = Rc::clone(&ititle_label);
         text_viewer.buffer().connect_changed(move |_| {
-            let mut title_text = ititle_label_rc.borrow().get_itext().to_owned();
-            if title_text.ends_with("^") {
-                title_text.pop();
-                ititle_label_rc.borrow_mut().set_itext(title_text);
-            }
             let item_text = ititle_label_rc.borrow().label.text().to_string();
             if !item_text.ends_with("*") {
                 ititle_label_rc
@@ -2664,7 +2734,7 @@ fn open_other_file(
 
             nviewer_drc
                 .borrow_mut()
-                .set_itext(format!("{}:{title}^", ipath_drc.as_ref()));
+                .set_itext(format!("{}:{title}", ipath_drc.as_ref()));
 
             dwindow_yrc.close();
         });
@@ -2704,7 +2774,7 @@ fn open_other_file(
 
         iviewer_title_rc
             .borrow_mut()
-            .set_itext(format!("{}:{title}^", ipath_rc.as_ref()));
+            .set_itext(format!("{}:{title}", ipath_rc.as_ref()));
     }
 }
 
@@ -2795,4 +2865,9 @@ fn get_text_from_cwin(window: &gtk4::ScrolledWindow) -> Option<glib::GString> {
     };
     let bounds = textview.buffer().bounds();
     Some(textview.buffer().text(&bounds.0, &bounds.1, true))
+}
+
+#[inline]
+fn round_below_1(value: f64) -> f64 {
+    (value * 10 as f64).round() / 10 as f64
 }
