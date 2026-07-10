@@ -11,8 +11,6 @@
 This is an encrypted filesystem manager, made by @7654jp.  
 This program was written in Rust, and uses AES-256-GCM for encryption.  
 **This was made for my personal use. Do not use this for important purposes.**  
-All data is stored in 'master.vbase' at same directory as this executable.  
-If you want to split vaults, copy this application to a different directory.  
 You can set each vault its password, and the vault will be protected with its hash as a key for AES.  
 This vault system **IS vulnable** to a memory dump.
 
@@ -27,6 +25,15 @@ This vault system **IS vulnable** to a memory dump.
 
 Contributions are welcome.  
 Please send a PR or open an issue if you want to improve something.
+
+*****
+
+### Licenses
+
+BaseAES is licensed under GPLv3.  
+
+All crates (libraries) are licensed under the MIT license.  
+You can see every license under [licenses](licences/) folder.
 
 *****
 
@@ -55,12 +62,3 @@ LOSING AN ENCRYPTION KEY WILL MAKE YOUR ENCRYPTED DATA INACCESSIBLE. SINCE IT CA
 **6. USER AGREEMENT**  
 
 USERS MUST ACKNOWLEDGE AND ACCEPT THE RISKS ASSOCIATED WITH USING THIS PROGRAM IN ADVANCE.
-
-*****
-
-### Licenses
-
-BaseAES is licensed under GPLv3.  
-
-All crates (libraries) are licensed under the MIT license.  
-You can see every license under [licenses](licences/) folder.

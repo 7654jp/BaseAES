@@ -62,6 +62,7 @@ pub mod text {
     pub mod explorer {
         pub const EXP_ITEMNAME_PH: &str = "Click the file to open...";
         pub const EXP_SAVE_ITEM: &str = "Save";
+        pub const EXP_SHOW_FINFO: &str = "File info";
         pub const EXP_NEW_FILE: &str = "New file";
         pub const EXP_CREATE_FILE: &str = "Create file";
         pub const EXP_CREATE_TITLE: &str = "Create a new file";
@@ -72,6 +73,10 @@ pub mod text {
         pub const EXP_IMPORT_NAME_INVALID: &str =
             "The name of the selected file is invalid for this app.";
         pub const EXP_IMPORT_DUPLICATED_NAME: &str = " (Copy)";
+        pub const EXP_IMPORT_BASE64: &str = "Import from Base64";
+        pub const EXP_IMPORT_BASE64_DESC: &str = "Enter Base64 below:";
+        pub const EXP_IMPORT_BASE64_EX: &str = "This prompt support:\nRaw Base64 (E.g. TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (E.g. data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)";
+        pub const EXP_IMPORT_BASE64_INVALID: &str = "Failed to parse Base64 text.";
         pub const EXP_NEW_FOLDER: &str = "New folder";
         pub const EXP_NEW_FOLDER_TITLE: &str = "Add a new folder...";
         pub const EXP_NEW_FOLDER_DESC: &str = "Enter folder name:";
@@ -325,6 +330,7 @@ pub mod text {
     pub mod explorer {
         pub const EXP_ITEMNAME_PH: &str = "ファイルを選択して開く";
         pub const EXP_SAVE_ITEM: &str = "保存";
+        pub const EXP_SHOW_FINFO: &str = "ファイル情報";
         pub const EXP_NEW_FILE: &str = "新規ファイル";
         pub const EXP_CREATE_FILE: &str = "ファイルを作成";
         pub const EXP_CREATE_TITLE: &str = "新しいファイルを作成";
@@ -335,6 +341,10 @@ pub mod text {
         pub const EXP_IMPORT_NAME_INVALID: &str =
             "選択されたファイルの名前はこのアプリでは無効です。";
         pub const EXP_IMPORT_DUPLICATED_NAME: &str = " (コピー)";
+        pub const EXP_IMPORT_BASE64: &str = "Base64から";
+        pub const EXP_IMPORT_BASE64_DESC: &str = "Base64を下の欄に入力してください:";
+        pub const EXP_IMPORT_BASE64_EX: &str = "このプロンプトでは、\nBase64単体 (例: TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (例: data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)\nがサポートされます。";
+        pub const EXP_IMPORT_BASE64_INVALID: &str = "Base64テキストの読み取りに失敗しました。";
         pub const EXP_NEW_FOLDER: &str = "新規フォルダ";
         pub const EXP_NEW_FOLDER_TITLE: &str = "新しいフォルダーを作成";
         pub const EXP_NEW_FOLDER_DESC: &str = "フォルダー名を入力:";
