@@ -205,13 +205,13 @@ fn open_vault(
 
     // Image processing handler
     let idcs = Rc::new(RefCell::new(ImgDecodingController::new()));
-    let (sender, receiver) = std::sync::mpsc::channel::<(u32, RawPixbuf)>();
+    let (sender, receiver) = std::sync::mpsc::channel::<(u32, RawPixbuf, &str)>();
     let idcs_trc = Rc::clone(&idcs);
     // Image decoding request handler
     let handler_raw =
         glib::source::timeout_add_local(std::time::Duration::from_millis(20), move || {
             // Fetch decoding result
-            if let Ok((idx, pb_raw)) = receiver.try_recv() {
+            if let Ok((idx, pb_raw, ityp)) = receiver.try_recv() {
                 if let Some((img_rc, cgrid)) = idcs_trc.borrow_mut().image_provider.get(&idx) {
                     let rowstride = pb_raw.width * if pb_raw.has_alpha { 4 } else { 3 };
                     img_rc.set_pixbuf(Some(&gtk4::gdk_pixbuf::Pixbuf::from_bytes(
@@ -223,6 +223,8 @@ fn open_vault(
                         pb_raw.height,
                         rowstride,
                     )));
+                    img_rc
+                        .add_css_class(&format!("baim_{}x{}:{ityp}", pb_raw.width, pb_raw.height));
                     cgrid.set_size_request(pb_raw.width, pb_raw.height);
                 } else {
                     drop(pb_raw);
@@ -250,14 +252,14 @@ fn open_vault(
                         IDCSImageType::Png => {
                             std::thread::spawn(move || {
                                 if let Some(rawpb) = get_rpixbuf_from_png_u8(img_data) {
-                                    let _ = ssender.send((img_id, rawpb));
+                                    let _ = ssender.send((img_id, rawpb, "PNG"));
                                 }
                             });
                         }
                         IDCSImageType::Jpeg => {
                             std::thread::spawn(move || {
                                 if let Some(rawpb) = get_rpixbuf_from_jpeg_u8(img_data) {
-                                    let _ = ssender.send((img_id, rawpb));
+                                    let _ = ssender.send((img_id, rawpb, "JPEG"));
                                 }
                             });
                         }
@@ -354,7 +356,7 @@ fn open_vault(
         finfo_window.set_application(Some(app_rfi.as_ref()));
         finfo_window.set_title(Some(lang::text::explorer::EXP_SHOW_FINFO));
         finfo_window.set_default_size(240, 160);
-        finfo_window.set_modal(true);
+        finfo_window.set_resizable(false);
 
         let finfo_grid = grid_builder(6, 12, 12, 12, 6, 6).build();
 
@@ -404,21 +406,36 @@ fn open_vault(
         // Get image size if showing an image
         if let Some(grid) = iviewer_rfi.child().unwrap().first_child()
             && let Some(maybe_image) = grid.first_child()
-            && let Ok(_) = maybe_image.dynamic_cast::<gtk4::Picture>()
+            && let Ok(image) = maybe_image.dynamic_cast::<gtk4::Picture>()
         {
-            let (imgw, imgh) = grid.size_request();
-            info.push_str("\nImage width: ");
-            info.push_str(&imgw.to_string());
-            info.push_str("px");
-            info.push_str("\nImage height: ");
-            info.push_str(&imgh.to_string());
-            info.push_str("px");
+            let mut size_written = false;
+            for class in image.css_classes() {
+                if let Some((_, meta)) = class.split_once("_") {
+                    let (dim, ityp) = meta.split_once(":").unwrap();
+                    info.push_str("\n Image Type: ");
+                    info.push_str(ityp);
+
+                    let (imgw, imgh) = dim.split_once("x").unwrap();
+                    info.push_str("\nImage Width: ");
+                    info.push_str(imgw);
+                    info.push_str("px");
+                    info.push_str("\nImage Height: ");
+                    info.push_str(imgh);
+                    info.push_str("px");
+                    size_written = true;
+                }
+            }
+            if !size_written {
+                info.push_str("\nImage width: (???) px");
+                info.push_str("\nImage height: (???) px");
+            }
         }
 
         let desc_label = gtk4::Label::new(Some(&info));
         finfo_grid.attach(&desc_label, 1, 1, 1, 1);
 
         finfo_window.set_child(Some(&finfo_grid));
+        finfo_window.set_modal(true);
         finfo_window.present();
     });
     item_grid.attach(&show_finfo_button, 1, 4, 1, 1);
@@ -2021,11 +2038,11 @@ pub fn get_files_from_vpath(
                             continue;
                         }
                         if let Ok(image) = grid_child.unwrap().dynamic_cast::<gtk4::Picture>() {
-                            if image.css_classes().len() == 1 {
-                                let imgid: u32 =
-                                    str::parse(&image.css_classes()[0].clone()).unwrap();
-                                idcs_frc.borrow_mut().queue.remove(&imgid);
-                                idcs_frc.borrow_mut().image_provider.remove(&imgid);
+                            for class in image.css_classes() {
+                                if let Ok(imgid) = str::parse::<u32>(&class) {
+                                    idcs_frc.borrow_mut().queue.remove(&imgid);
+                                    idcs_frc.borrow_mut().image_provider.remove(&imgid);
+                                }
                             }
                         }
                     }

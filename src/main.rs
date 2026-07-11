@@ -61,7 +61,7 @@ fn open_main(application: &gtk4::Application) {
             let info_grid = grid_builder(12, 12, 24, 24, 6, 6).build();
 
             let info_title = gtk4::Label::new(None);
-            info_title.set_markup("<b>BaseAES 1.3.0 (Release version)</b>");
+            info_title.set_markup("<b>BaseAES 1.3.1 (Release version)</b>");
             info_title.add_css_class("big");
             info_grid.attach(&info_title, 1, 1, 1, 1);
 

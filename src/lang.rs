@@ -335,13 +335,13 @@ pub mod text {
         pub const EXP_CREATE_FILE: &str = "ファイルを作成";
         pub const EXP_CREATE_TITLE: &str = "新しいファイルを作成";
         pub const EXP_CREATE_DESC: &str = "ファイル名を入力:";
-        pub const EXP_IMPORT_FILE: &str = "インポート";
+        pub const EXP_IMPORT_FILE: &str = "ファイルをインポート";
         pub const EXP_IMPORT_TITLE: &str = "インポートするファイルを選択してください";
         pub const EXP_IMPORT_OPEN_ERROR: &str = "選択されたファイルを開けませんでした。";
         pub const EXP_IMPORT_NAME_INVALID: &str =
             "選択されたファイルの名前はこのアプリでは無効です。";
         pub const EXP_IMPORT_DUPLICATED_NAME: &str = " (コピー)";
-        pub const EXP_IMPORT_BASE64: &str = "Base64から";
+        pub const EXP_IMPORT_BASE64: &str = "Base64からインポート";
         pub const EXP_IMPORT_BASE64_DESC: &str = "Base64を下の欄に入力してください:";
         pub const EXP_IMPORT_BASE64_EX: &str = "このプロンプトでは、\nBase64単体 (例: TmV2ZXJHb25uYUdpdmVZb3VVcA==)\n'data' URI (例: data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgH...)\nがサポートされます。";
         pub const EXP_IMPORT_BASE64_INVALID: &str = "Base64テキストの読み取りに失敗しました。";
