@@ -99,6 +99,8 @@ pub fn ask_vault_password_and_open_async(
     vcommlabel: Rc<RefCell<gtk4::Label>>,
     selwindow_rc: Rc<gtk4::Window>,
 ) {
+    let vdata_fetch = Rc::new(RefCell::new(Vec::<u8>::new()));
+
     // Ask vault password
     let vopen_window = Rc::new(
         gtk4::Window::builder()
@@ -121,9 +123,13 @@ pub fn ask_vault_password_and_open_async(
     // Confirm button
     let vopen_ok_button = gtk4::Button::with_label("OK");
     let vopen_window_rc = Rc::clone(&vopen_window);
-    vopen_ok_button.connect_clicked(move |_| match vault_data.try_recv() {
-        Ok(data) => {
-            selwindow_rc.close();
+    vopen_ok_button.connect_clicked(move |_| {
+        let receive = vault_data.try_recv();
+        if receive.is_ok() || !vdata_fetch.borrow().is_empty() {
+            if vdata_fetch.borrow().is_empty() {
+                vdata_fetch.borrow_mut().extend(receive.unwrap());
+            }
+            let data = vdata_fetch.borrow();
             let (nonce_s, data_s) = data.split_at(12);
             let nonce: [u8; 12] = nonce_s.try_into().unwrap();
             // Decode
@@ -156,6 +162,7 @@ pub fn ask_vault_password_and_open_async(
             };
             // Vault decryption is successful here
             vopen_window_rc.close();
+            selwindow_rc.close();
 
             open_vault(
                 Rc::clone(&application),
@@ -163,20 +170,23 @@ pub fn ask_vault_password_and_open_async(
                 Rc::clone(&vcommlabel),
                 Rc::clone(&vault_password),
             );
-        }
-        Err(TryRecvError::Empty) => {
-            show_alert(
-                vopen_window_rc.as_ref(),
-                lang::text::unlock::VUNLOCK_SORRY,
-                lang::text::unlock::VUNLOCK_LOAD_NOT_FINISHED,
-            );
-        }
-        Err(TryRecvError::Disconnected) => {
-            show_alert(
-                vopen_window_rc.as_ref(),
-                lang::text::generic::ERROR,
-                lang::text::unlock::VUNLOCK_DISCONNECTED,
-            );
+        } else {
+            match receive.unwrap_err() {
+                TryRecvError::Empty => {
+                    show_alert(
+                        vopen_window_rc.as_ref(),
+                        lang::text::unlock::VUNLOCK_SORRY,
+                        lang::text::unlock::VUNLOCK_LOAD_NOT_FINISHED,
+                    );
+                }
+                TryRecvError::Disconnected => {
+                    show_alert(
+                        vopen_window_rc.as_ref(),
+                        lang::text::generic::ERROR,
+                        lang::text::unlock::VUNLOCK_DISCONNECTED,
+                    );
+                }
+            }
         }
     });
     vopen_grid.attach(&vopen_ok_button, 2, 2, 1, 1);

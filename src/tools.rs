@@ -1556,7 +1556,17 @@ pub fn baseaes_setup(
             );
             return;
         }
-        let mvaultpath = mvaultpath_opt.unwrap();
+        let mvaultpath_opt_clr = mvaultpath_opt.unwrap();
+        let mvaultpath_res = urlencoding::decode(mvaultpath_opt_clr.as_str());
+        if mvaultpath_res.is_err() {
+            show_alert(
+                swindow_rc.as_ref(),
+                lang::text::generic::ERROR,
+                lang::text::setup::SETUP_ERROR_PATH_DECODE_FAILED,
+            );
+            return;
+        }
+        let mvaultpath = mvaultpath_res.unwrap().into_owned();
         let new_mvault_res = fs::File::create_new(&mvaultpath);
         if new_mvault_res.is_err() {
             show_alert(

@@ -174,6 +174,8 @@ pub mod text {
             "Please select where to save the master vault.";
         pub const SETUP_ERROR_LOCATION_FETCH_FAILED: &str =
             "Failed to get the location to save the master vault.";
+        pub const SETUP_ERROR_PATH_DECODE_FAILED: &str =
+            "Failed to decode the location to save the master vault.";
         pub const SETUP_ERROR_CREATE_NEW_FAILED: &str =
             "Failed to create the new master vault.\nBaseAES does not support overwriting.";
         pub const SETUP_INIT_VNAME_ENC_FAILED: &str =
@@ -441,6 +443,8 @@ pub mod text {
         pub const SETUP_ERROR_EMPTY_LOCATION: &str = "マスター金庫の保存先を選択してください。";
         pub const SETUP_ERROR_LOCATION_FETCH_FAILED: &str =
             "マスター金庫の保存先の取得に失敗しました。";
+        pub const SETUP_ERROR_PATH_DECODE_FAILED: &str =
+            "マスター金庫の保存先のデコードに失敗しました。";
         pub const SETUP_ERROR_CREATE_NEW_FAILED: &str =
             "マスター金庫の新規作成に失敗しました。\nBaseAESでは既存の金庫の上書きはできません。";
         pub const SETUP_INIT_VNAME_ENC_FAILED: &str =
