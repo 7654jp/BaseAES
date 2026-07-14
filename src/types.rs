@@ -213,3 +213,21 @@ impl ImgDecodingController {
         }
     }
 }
+
+pub enum ImageViewMode {
+    ImgSize,
+    FitWidth,
+    FitHeight,
+}
+
+impl ToOwned for ImageViewMode {
+    type Owned = ImageViewMode;
+
+    fn to_owned(&self) -> Self::Owned {
+        match &self {
+            &ImageViewMode::ImgSize => ImageViewMode::ImgSize,
+            &ImageViewMode::FitWidth => ImageViewMode::FitWidth,
+            &ImageViewMode::FitHeight => ImageViewMode::FitHeight,
+        }
+    }
+}
