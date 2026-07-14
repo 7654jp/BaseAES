@@ -450,6 +450,67 @@ fn open_vault(
     });
     item_grid.attach(&show_finfo_button, 1, 4, 1, 1);
 
+    // Toggle image view mode button
+    let toggle_imgview_button = Rc::new(gtk4::Button::with_label(
+        lang::text::explorer::EXP_TOGGLE_IMGVIEW,
+    ));
+    let toggle_imgview_mode = Rc::new(RefCell::new(ItemContainer::new(ImageViewMode::ImgSize)));
+    toggle_imgview_button.set_size_request(96, 48);
+    toggle_imgview_button.set_hexpand(false);
+
+    // Rc suffix: _rit
+    let iviewer_rit = Rc::clone(&item_viewer);
+    let imgviewmode_rit = Rc::clone(&toggle_imgview_mode);
+    toggle_imgview_button.connect_clicked(move |_| {
+        if let Some(view) = iviewer_rit.child()
+            && let Some(should_be_view_grid) = view.first_child()
+            && let Ok(view_grid) = should_be_view_grid.dynamic_cast::<gtk4::Grid>()
+        {
+            if let Some(maybe_image) = view_grid.first_child()
+                && let Ok(image_viewer) = maybe_image.dynamic_cast::<gtk4::Picture>()
+            {
+                let (imgw, imgh) = |imgview: &gtk4::Picture| -> (i32, i32) {
+                    for class in imgview.css_classes() {
+                        if let Some((_, meta)) = class.split_once("_") {
+                            let (imgw_str, imgh_str) =
+                                meta.split_once(":").unwrap().0.split_once("x").unwrap();
+                            return (
+                                i32::from_str_radix(imgw_str, 10).unwrap_or(-1),
+                                i32::from_str_radix(imgh_str, 10).unwrap_or(-1),
+                            );
+                        }
+                    }
+                    return (-1, -1);
+                }(&image_viewer);
+                let imgviewmode_curr = imgviewmode_rit.borrow().get().to_owned();
+                match imgviewmode_curr {
+                    ImageViewMode::ImgSize => {
+                        imgviewmode_rit.borrow_mut().set(ImageViewMode::FitWidth);
+                        view_grid.set_width_request(iviewer_rit.width() - 24);
+                        view_grid.set_height_request(
+                            (imgh as f32 * ((iviewer_rit.width() - 24) as f32 / imgw as f32))
+                                as i32,
+                        );
+                    }
+                    ImageViewMode::FitWidth => {
+                        imgviewmode_rit.borrow_mut().set(ImageViewMode::FitHeight);
+                        view_grid.set_width_request(
+                            (imgw as f32 * ((iviewer_rit.height() - 24) as f32 / imgh as f32))
+                                as i32,
+                        );
+                        view_grid.set_height_request(iviewer_rit.height() - 24);
+                    }
+                    ImageViewMode::FitHeight => {
+                        imgviewmode_rit.borrow_mut().set(ImageViewMode::ImgSize);
+                        view_grid.set_width_request(imgw);
+                        view_grid.set_height_request(imgh);
+                    }
+                };
+            }
+        }
+    });
+    item_grid.attach(toggle_imgview_button.as_ref(), 2, 4, 1, 1);
+
     // Control grid, left side of the vault window
     let control_grid = grid_builder(6, 12, 12, 12, 8, 8).vexpand(true).build();
 
@@ -2690,9 +2751,9 @@ fn get_item_viewer_grid(
             .wrap_mode(gtk4::WrapMode::Word)
             .build();
         text_viewer.add_css_class("normal");
-        text_viewer
-            .buffer()
-            .set_text(lang::text::explorer::EXP_CONTENT_BIN_DESC);
+        text_viewer.buffer().set_text(
+            &(format!("Detected MIME: {fmime}\n") + lang::text::explorer::EXP_CONTENT_BIN_DESC),
+        );
         iviewer_grid.attach(&text_viewer, 1, 1, 1, 1);
     };
 

@@ -63,6 +63,7 @@ pub mod text {
         pub const EXP_ITEMNAME_PH: &str = "Click the file to open...";
         pub const EXP_SAVE_ITEM: &str = "Save";
         pub const EXP_SHOW_FINFO: &str = "File info";
+        pub const EXP_TOGGLE_IMGVIEW: &str = "Toggle image view";
         pub const EXP_NEW_FILE: &str = "New file";
         pub const EXP_CREATE_FILE: &str = "Create file";
         pub const EXP_CREATE_TITLE: &str = "Create a new file";
@@ -333,6 +334,7 @@ pub mod text {
         pub const EXP_ITEMNAME_PH: &str = "ファイルを選択して開く";
         pub const EXP_SAVE_ITEM: &str = "保存";
         pub const EXP_SHOW_FINFO: &str = "ファイル情報";
+        pub const EXP_TOGGLE_IMGVIEW: &str = "画像表示方法を変更";
         pub const EXP_NEW_FILE: &str = "新規ファイル";
         pub const EXP_CREATE_FILE: &str = "ファイルを作成";
         pub const EXP_CREATE_TITLE: &str = "新しいファイルを作成";
